@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "name": "access.remote_sensing_access",
+  "executable": "access-computer",
+  "version": "0.1.0",
+  "description": "Compute remote sensing access windows using GMAT",
+  "domain": "access",
+  "safety_class": "planning_only",
+  "commands": ["manifest", "validate", "run"],
+  "scenarios": ["remote_sensing_access", "attitude_estimation", "downlink_window"],
+  "input_schema_path": "schemas/remote_sensing_access.input.schema.json",
+  "output_schema_path": "schemas/remote_sensing_access.output.schema.json",
+  "capabilities": {
+    "async": false,
+    "dry_run": true,
+    "cancel": "none",
+    "requires_gmat": true,
+    "batch": false,
+    "idempotent": false
+  },
+  "resource_limits": {
+    "timeout_sec": 1800,
+    "max_parallel": 2,
+    "max_work_dir_mb": 1024
+  },
+  "agent_hints": {
+    "when_to_use": "Compute optical access, attitude, or downlink windows before imaging or comm",
+    "prerequisites": ["orbit_state_current"],
+    "typical_latency_sec": 120
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "request_id": "req_short_001",
+  "task": {
+    "scenario": "remote_sensing_access",
+    "start_time_utc": "2026-12-30T00:00:00Z",
+    "duration_sec": 600,
+    "step_sec": 10
+  },
+  "spacecraft": {
+    "sat_id": "sat_A",
+    "epoch_utc": "30 Dec 2026 00:00:00.000",
+    "state_type": "keplerian",
+    "elements": {
+      "sma_km": 6716.14,
+      "ecc": 0.0,
+      "inc_deg": 96.806,
+      "raan_deg": 76.515,
+      "aop_deg": 0.0,
+      "ta_deg": 0.0
+    }
+  },
+  "target": {
+    "type": "ground_point",
+    "lon_deg": 114.3055,
+    "lat_deg": 30.5928,
+    "alt_km": 0.057
+  },
+  "sensor": {
+    "type": "optical_linescan",
+    "mode": "side_roll_only"
+  },
+  "constraints": {
+    "roll_max_deg": 30.0,
+    "require_sunlit": true,
+    "exclude_umbra": true
+  },
+  "gmat": {
+    "install_root": "/home/hotdry/projects/GMAT-R2026a/GMAT-R2026a-Linux-x64"
+  }
+}

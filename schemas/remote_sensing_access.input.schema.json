@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://access-computer.local/schemas/remote_sensing_access.input.schema.json",
+  "title": "RemoteSensingAccessInput",
+  "type": "object",
+  "required": ["task", "spacecraft", "target", "constraints"],
+  "properties": {
+    "request_id": { "type": "string" },
+    "idempotency_key": { "type": "string" },
+    "experimental": {
+      "type": "object",
+      "properties": {
+        "allow_sar": {
+          "type": "boolean",
+          "description": "Reserved for SAR contract testing only; SAR planning is not implemented in v0.1.0"
+        }
+      },
+      "additionalProperties": false
+    },
+    "task": {
+      "type": "object",
+      "required": ["scenario", "start_time_utc", "duration_sec", "step_sec"],
+      "properties": {
+        "scenario": {
+          "type": "string",
+          "enum": [
+            "remote_sensing_access",
+            "attitude_estimation",
+            "downlink_window"
+          ]
+        },
+        "start_time_utc": {
+          "type": "string",
+          "description": "ISO-8601 UTC start time for the planning horizon"
+        },
+        "duration_sec": { "type": "number", "minimum": 1 },
+        "step_sec": { "type": "number", "minimum": 0.1 },
+        "elapsed_start_sec": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Optional propagation offset from spacecraft.epoch_utc before sampling; used for short attitude refinement around a known access epoch"
+        }
+      }
+    },
+    "spacecraft": {
+      "type": "object",
+      "required": ["sat_id", "epoch_utc", "state_type", "elements"],
+      "properties": {
+        "sat_id": { "type": "string" },
+        "epoch_utc": {
+          "type": "string",
+          "description": "GMAT UTCGregorian epoch string, e.g. 30 Dec 2026 00:00:00.000"
+        },
+        "state_type": { "type": "string", "enum": ["keplerian"] },
+        "elements": {
+          "type": "object",
+          "required": ["sma_km", "ecc", "inc_deg", "raan_deg", "aop_deg", "ta_deg"],
+          "properties": {
+            "sma_km": { "type": "number" },
+            "ecc": { "type": "number" },
+            "inc_deg": { "type": "number" },
+            "raan_deg": { "type": "number" },
+            "aop_deg": { "type": "number" },
+            "ta_deg": { "type": "number" }
+          }
+        },
+        "propagation_profile": {
+          "type": "string",
+          "enum": ["sso_j2_default", "segmented_drag_profile"],
+          "description": "Only sso_j2_default is implemented in v0.1.0; segmented_drag_profile is reserved for future per-orbit drag/attitude segments"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["type", "lon_deg", "lat_deg", "alt_km"],
+      "properties": {
+        "type": { "type": "string", "enum": ["ground_point", "ground_station"] },
+        "lon_deg": { "type": "number", "minimum": -180, "maximum": 180 },
+        "lat_deg": { "type": "number", "minimum": -90, "maximum": 90 },
+        "alt_km": { "type": "number" }
+      }
+    },
+    "sensor": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["sar", "optical_linescan", "optical_area_array", "downlink_cone"]
+        },
+        "mode": { "type": "string", "enum": ["side_roll_only", "stare"] }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "roll_max_deg": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 90,
+          "description": "Side-roll limit theta_max; default 30 deg for optical access"
+        },
+        "task_duration_sec": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Task execution duration tau including maneuver budget; default 200 s"
+        },
+        "require_sunlit": { "type": "boolean" },
+        "exclude_umbra": { "type": "boolean" },
+        "exclude_penumbra": { "type": "boolean" },
+        "cone_angle_deg": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 90,
+          "description": "Ground-station cone half-angle from zenith for downlink visibility; default 65 deg, mapped to MinimumElevationAngle = 90 - cone_angle_deg"
+        }
+      }
+    },
+    "gmat": {
+      "type": "object",
+      "properties": {
+        "install_root": { "type": "string" },
+        "console_binary": { "type": "string" }
+      }
+    }
+  },
+  "additionalProperties": false
+}

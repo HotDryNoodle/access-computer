@@ -1,0 +1,65 @@
+%
+%  mission-planer downlink contact template
+%
+
+Create Spacecraft Sat;
+
+Sat.DateFormat       = UTCGregorian;
+Sat.Epoch            = '{{EPOCH_UTC}}';
+Sat.CoordinateSystem = EarthMJ2000Eq;
+Sat.DisplayStateType = Keplerian;
+Sat.SMA              = {{SMA_KM}};
+Sat.ECC              = {{ECC}};
+Sat.INC              = {{INC_DEG}};
+Sat.RAAN             = {{RAAN_DEG}};
+Sat.AOP              = {{AOP_DEG}};
+Sat.TA               = {{TA_DEG}};
+
+Create GroundStation Station;
+
+Station.CentralBody = Earth;
+Station.HorizonReference = Ellipsoid;
+Station.StateType = Spherical;
+Station.Location1 = {{STATION_LAT}};
+Station.Location2 = {{STATION_LON}};
+Station.Location3 = {{STATION_ALT_KM}};
+Station.MinimumElevationAngle = {{MIN_ELEVATION_DEG}};
+
+Create ForceModel FM;
+
+FM.CentralBody = Earth;
+FM.PrimaryBodies = {Earth};
+FM.PointMasses = {};
+FM.Drag = None;
+FM.SRP = Off;
+FM.GravityField.Earth.Degree = 2;
+FM.GravityField.Earth.Order = 0;
+FM.GravityField.Earth.PotentialFile = 'JGM2.cof';
+
+Create Propagator Prop;
+
+Prop.FM = FM;
+Prop.Type = RungeKutta89;
+Prop.InitialStepSize = 30;
+Prop.Accuracy = 1e-11;
+Prop.MaxStep = 60;
+
+Create ContactLocator ContactLoc;
+
+ContactLoc.Target = Sat;
+ContactLoc.Filename = '{{OUTPUT_DIR}}/contact_intervals.txt';
+ContactLoc.InputEpochFormat = 'UTCGregorian';
+ContactLoc.StepSize = {{STEP_SEC}};
+ContactLoc.WriteReport = true;
+ContactLoc.RunMode = Automatic;
+ContactLoc.UseEntireInterval = true;
+ContactLoc.Observers = {Station};
+ContactLoc.LightTimeDirection = Transmit;
+
+BeginMissionSequence;
+
+If {{ELAPSED_START_SEC}} > 0.0
+   Propagate Prop(Sat) {Sat.ElapsedSecs = {{ELAPSED_START_SEC}}};
+EndIf;
+
+Propagate Prop(Sat) {Sat.ElapsedDays = {{TOTAL_DURATION_DAYS}}};

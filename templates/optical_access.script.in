@@ -1,0 +1,222 @@
+%
+%  mission-planer optical access template (J2-only, NadirPointing)
+%
+
+Create Spacecraft Sat;
+
+Sat.DateFormat             = UTCGregorian;
+Sat.Epoch                  = '{{EPOCH_UTC}}';
+Sat.CoordinateSystem       = EarthMJ2000Eq;
+Sat.DisplayStateType       = Keplerian;
+Sat.SMA                    = {{SMA_KM}};
+Sat.ECC                    = {{ECC}};
+Sat.INC                    = {{INC_DEG}};
+Sat.RAAN                   = {{RAAN_DEG}};
+Sat.AOP                    = {{AOP_DEG}};
+Sat.TA                     = {{TA_DEG}};
+Sat.NAIFId                 = -99001;
+Sat.NAIFIdReferenceFrame   = -99001001;
+
+Sat.Attitude               = NadirPointing;
+Sat.AttitudeReferenceBody  = Earth;
+Sat.AttitudeConstraintType = OrbitNormal;
+Sat.BodyAlignmentVectorX   = 0;
+Sat.BodyAlignmentVectorY   = 0;
+Sat.BodyAlignmentVectorZ   = 1;
+Sat.BodyConstraintVectorX  = 1;
+Sat.BodyConstraintVectorY  = 0;
+Sat.BodyConstraintVectorZ  = 0;
+
+Create GroundStation TargetA;
+
+TargetA.CentralBody = Earth;
+TargetA.StateType   = Spherical;
+TargetA.Location1   = {{TARGET_LAT}};
+TargetA.Location2   = {{TARGET_LON}};
+TargetA.Location3   = {{TARGET_ALT_KM}};
+
+Create ForceModel FM;
+
+FM.CentralBody                      = Earth;
+FM.PrimaryBodies                    = {Earth};
+FM.PointMasses                      = {};
+FM.Drag                             = None;
+FM.SRP                              = Off;
+FM.GravityField.Earth.Degree        = 2;
+FM.GravityField.Earth.Order         = 0;
+FM.GravityField.Earth.PotentialFile = 'JGM2.cof';
+FM.GravityField.Earth.TideModel     = 'None';
+
+Create Propagator Prop;
+
+Prop.FM                       = FM;
+Prop.Type                     = RungeKutta89;
+Prop.InitialStepSize          = 30;
+Prop.Accuracy                 = 1e-11;
+Prop.MaxStep                  = 60;
+Prop.StopIfAccuracyIsViolated = true;
+
+Create EclipseLocator EclLoc;
+
+EclLoc.Spacecraft         = Sat;
+EclLoc.OccultingBodies    = {Earth};
+EclLoc.EclipseTypes       = {'Umbra', 'Penumbra'};
+EclLoc.RunMode            = Automatic;
+EclLoc.UseEntireInterval  = true;
+EclLoc.WriteReport        = true;
+EclLoc.Filename           = '{{OUTPUT_DIR}}/eclipse_intervals.txt';
+EclLoc.StepSize           = 30;
+EclLoc.InputEpochFormat   = 'UTCGregorian';
+
+Create ReportFile TraceReport;
+
+TraceReport.Filename     = '{{OUTPUT_DIR}}/sample_trace.txt';
+TraceReport.WriteHeaders = false;
+TraceReport.Precision    = 12;
+TraceReport.ColumnWidth  = 22;
+
+Create ReportFile RvReport;
+
+RvReport.Filename     = '{{OUTPUT_DIR}}/sat_rv_j2000.csv';
+RvReport.WriteHeaders = false;
+RvReport.Precision    = 16;
+RvReport.ColumnWidth  = 24;
+
+Create Variable pi deg2rad Re rollMaxDeg rollRad swathHalf altKm;
+Create Variable latRad lonRad;
+Create Variable ex ey ez nx ny nz ve vn;
+Create Variable tX tY tZ tNorm ux uy uz;
+Create Variable srX srY srZ srNorm alphaSun;
+Create Variable satX satY satZ satNorm losX losY losZ losNorm losUX losUY losUZ;
+Create Variable nadirDotLos offNadirDeg bHalf cRay discRay tHit1 tHit2 losClear;
+Create Variable tgtLatDeg tgtLonDeg tgtLatRad tgtLonRad dLon cosPsi groundRangeKm;
+Create Variable inSwath lit geomVisible stepSec;
+
+BeginMissionSequence;
+
+pi         = 3.141592653589793;
+deg2rad    = pi / 180.0;
+Re         = 6378.137;
+rollMaxDeg = {{ROLL_MAX_DEG}};
+rollRad    = rollMaxDeg * deg2rad;
+stepSec    = {{STEP_SEC}};
+tgtLatDeg  = {{TARGET_LAT}};
+tgtLonDeg  = {{TARGET_LON}};
+
+If {{ELAPSED_START_SEC}} > 0.0
+   Propagate Prop(Sat) {Sat.ElapsedSecs = {{ELAPSED_START_SEC}}};
+EndIf;
+
+While Sat.ElapsedDays < {{TOTAL_DURATION_DAYS}}
+
+   altKm = Sat.Earth.Altitude;
+   swathHalf = altKm * tan(rollRad);
+
+   latRad = Sat.Earth.Latitude * deg2rad;
+   lonRad = Sat.Earth.Longitude * deg2rad;
+
+   satX = Sat.EarthFixed.X;
+   satY = Sat.EarthFixed.Y;
+   satZ = Sat.EarthFixed.Z;
+   satNorm = sqrt(satX * satX + satY * satY + satZ * satZ);
+
+   losX = TargetA.EarthFixed.X - satX;
+   losY = TargetA.EarthFixed.Y - satY;
+   losZ = TargetA.EarthFixed.Z - satZ;
+   losNorm = sqrt(losX * losX + losY * losY + losZ * losZ);
+
+   If satNorm > 1.0e-6 & losNorm > 1.0e-6
+      losUX = losX / losNorm;
+      losUY = losY / losNorm;
+      losUZ = losZ / losNorm;
+      nadirDotLos = (-satX / satNorm) * losUX + (-satY / satNorm) * losUY + (-satZ / satNorm) * losUZ;
+      If nadirDotLos > 1.0
+         nadirDotLos = 1.0;
+      EndIf;
+      If nadirDotLos < -1.0
+         nadirDotLos = -1.0;
+      EndIf;
+      offNadirDeg = acos(nadirDotLos) / deg2rad;
+      bHalf = satX * losUX + satY * losUY + satZ * losUZ;
+      cRay = satNorm * satNorm - Re * Re;
+      discRay = bHalf * bHalf - cRay;
+      losClear = 1.0;
+      If discRay >= 0.0
+         tHit1 = -bHalf - sqrt(discRay);
+         If tHit1 > 1.0e-3 & tHit1 < losNorm
+            losClear = 0.0;
+         EndIf;
+         tHit2 = -bHalf + sqrt(discRay);
+         If tHit2 > 1.0e-3 & tHit2 < losNorm
+            losClear = 0.0;
+         EndIf;
+      EndIf;
+   Else
+      offNadirDeg = 180.0;
+      losClear = 0.0;
+   EndIf;
+
+   tgtLatRad = tgtLatDeg * deg2rad;
+   tgtLonRad = tgtLonDeg * deg2rad;
+   dLon = tgtLonRad - lonRad;
+   cosPsi = sin(latRad) * sin(tgtLatRad) + cos(latRad) * cos(tgtLatRad) * cos(dLon);
+   If cosPsi > 1.0
+      cosPsi = 1.0;
+   EndIf;
+   If cosPsi < -1.0
+      cosPsi = -1.0;
+   EndIf;
+   groundRangeKm = Re * acos(cosPsi);
+
+   ex = -sin(lonRad);
+   ey =  cos(lonRad);
+   ez =  0.0;
+   nx = -sin(latRad) * cos(lonRad);
+   ny = -sin(latRad) * sin(lonRad);
+   nz =  cos(latRad);
+   ve = Sat.EarthFixed.VX * ex + Sat.EarthFixed.VY * ey + Sat.EarthFixed.VZ * ez;
+   vn = Sat.EarthFixed.VX * nx + Sat.EarthFixed.VY * ny + Sat.EarthFixed.VZ * nz;
+
+   tX = TargetA.EarthFixed.X;
+   tY = TargetA.EarthFixed.Y;
+   tZ = TargetA.EarthFixed.Z;
+   tNorm = sqrt(tX * tX + tY * tY + tZ * tZ);
+   ux = tX / tNorm;
+   uy = tY / tNorm;
+   uz = tZ / tNorm;
+
+   srX = Sun.EarthFixed.X - tX;
+   srY = Sun.EarthFixed.Y - tY;
+   srZ = Sun.EarthFixed.Z - tZ;
+   srNorm = sqrt(srX * srX + srY * srY + srZ * srZ);
+
+   If srNorm > 1.0e-6
+      alphaSun = asin((srX * ux + srY * uy + srZ * uz) / srNorm) / deg2rad;
+   Else
+      alphaSun = -90.0;
+   EndIf;
+
+   If offNadirDeg <= rollMaxDeg & losClear > 0.5
+      inSwath = 1.0;
+   Else
+      inSwath = 0.0;
+   EndIf;
+
+   If alphaSun > 0.0
+      lit = 1.0;
+   Else
+      lit = 0.0;
+   EndIf;
+
+   If inSwath > 0.5 & lit > 0.5
+      geomVisible = 1.0;
+   Else
+      geomVisible = 0.0;
+   EndIf;
+
+   Report TraceReport Sat.UTCGregorian Sat.Earth.Latitude Sat.Earth.Longitude altKm offNadirDeg groundRangeKm swathHalf alphaSun inSwath lit geomVisible vn;
+   Report RvReport Sat.UTCGregorian Sat.X Sat.Y Sat.Z Sat.VX Sat.VY Sat.VZ;
+
+   Propagate Prop(Sat) {Sat.ElapsedSecs = stepSec};
+
+EndWhile;

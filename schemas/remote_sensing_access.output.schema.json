@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://access-computer.local/schemas/remote_sensing_access.output.schema.json",
+  "title": "RemoteSensingAccessOutput",
+  "type": "object",
+  "required": ["task_id", "status", "scenario"],
+  "properties": {
+    "task_id": { "type": "string" },
+    "request_id": { "type": "string" },
+    "scenario": {
+      "type": "string",
+      "enum": ["remote_sensing_access", "attitude_estimation", "downlink_window"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["succeeded", "no_result", "dry_run", "failed"]
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "window_count": { "type": "integer" },
+        "duration_total_sec": { "type": "number" }
+      }
+    },
+    "windows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "start_utc": { "type": "string" },
+          "end_utc": { "type": "string" },
+          "duration_sec": { "type": "number" },
+          "t0_utc": {
+            "type": "string",
+            "description": "Optical center projection time under side-roll-only assumption"
+          },
+          "phi_deg": {
+            "type": "number",
+            "description": "Fixed side-roll angle Phi at t0"
+          },
+          "pass_type": { "type": "string" },
+          "min_off_nadir_deg": { "type": "number" },
+          "max_sun_elevation_deg": { "type": "number" },
+          "max_elevation_deg": {
+            "type": "number",
+            "description": "Reserved for downlink window peak elevation"
+          }
+        }
+      }
+    },
+    "attitude": {
+      "type": "object",
+      "description": "Present for attitude_estimation when an access window exists",
+      "properties": {
+        "mode": { "type": "string", "enum": ["side_roll_only", "stare"] },
+        "t0_utc": { "type": "string" },
+        "phi_deg": { "type": "number" },
+        "pitch_deg": {
+          "type": "number",
+          "description": "Placeholder in v0.1.0 for stare mode; not a validated pointing solution"
+        },
+        "pitch_status": {
+          "type": "string",
+          "enum": ["placeholder", "computed"]
+        }
+      }
+    },
+    "artifacts": { "type": "object" },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  }
+}

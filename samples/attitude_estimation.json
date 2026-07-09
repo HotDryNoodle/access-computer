@@ -1,0 +1,43 @@
+{
+  "request_id": "req_attitude_001",
+  "task": {
+    "scenario": "attitude_estimation",
+    "start_time_utc": "2026-12-30T03:37:00Z",
+    "elapsed_start_sec": 13300,
+    "duration_sec": 900,
+    "step_sec": 1
+  },
+  "spacecraft": {
+    "sat_id": "sat_A",
+    "epoch_utc": "30 Dec 2026 00:00:00.000",
+    "state_type": "keplerian",
+    "elements": {
+      "sma_km": 6716.14,
+      "ecc": 0.0,
+      "inc_deg": 96.806,
+      "raan_deg": 76.515,
+      "aop_deg": 0.0,
+      "ta_deg": 0.0
+    },
+    "propagation_profile": "sso_j2_default"
+  },
+  "target": {
+    "type": "ground_point",
+    "lon_deg": 114.3055,
+    "lat_deg": 30.5928,
+    "alt_km": 0.057
+  },
+  "sensor": {
+    "type": "optical_area_array",
+    "mode": "stare"
+  },
+  "constraints": {
+    "roll_max_deg": 70.0,
+    "task_duration_sec": 200,
+    "require_sunlit": true,
+    "exclude_umbra": true
+  },
+  "gmat": {
+    "install_root": "/home/hotdry/projects/GMAT-R2026a/GMAT-R2026a-Linux-x64"
+  }
+}

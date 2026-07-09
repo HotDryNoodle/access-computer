@@ -1,0 +1,22 @@
+build/
+build-*/
+.meson-private/
+*.o
+*.a
+compile_commands.json
+
+# IDE / agent artifacts
+.cursor/
+
+# Meson subprojects — track wraps and overlays only
+/subprojects/*
+!/subprojects/*.wrap
+!/subprojects/packagefiles/
+!/subprojects/README.md
+/subprojects/packagecache/
+
+# Runtime task workspaces
+var/
+
+# cache
+.cache/
