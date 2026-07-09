@@ -1,6 +1,6 @@
 # access-computer
 
-> **产品需求 SSOT**：在 `satellite-workspace` 父仓阅读 [`docs/prd/access-computer-v1.md`](../../docs/prd/access-computer-v1.md)（三场景 I/O、传感器矩阵、Mission 映射、WindowSet 集成验收）。本文档为实现与构建说明。
+> **产品需求 SSOT**：在 `satellite-workspace` 父仓阅读 [`docs/prd/access-computer-v1.md`](../../docs/prd/access-computer-v1.md)（三场景 I/O、传感器矩阵、Mission 映射、WindowSet 集成验收）。**v0.1 差距矩阵**：[`docs/prd/access-computer-gap-matrix-v0.1.md`](../../docs/prd/access-computer-gap-matrix-v0.1.md)（AC-002）。本文档为实现与构建说明。
 
 GMAT-based **Access windows compute** CLI plugin (`access.remote_sensing_access`). Distributed mission orchestration lives in [`task-manager`](https://github.com/HotDryNoodle/task-manager); this plugin only computes optical access, attitude, and downlink windows.
 
