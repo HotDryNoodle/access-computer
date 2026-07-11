@@ -13,7 +13,7 @@ namespace {
 
 std::chrono::system_clock::time_point parse_utc(const std::string& text) {
     std::istringstream ss(text);
-    std::tm tm{};
+    std::tm            tm{};
     ss >> std::get_time(&tm, "%d %b %Y %H:%M:%S");
     if (ss.fail()) {
         std::istringstream ss2(text);
@@ -28,7 +28,7 @@ std::chrono::system_clock::time_point parse_utc(const std::string& text) {
 
 std::string format_utc(const std::chrono::system_clock::time_point& tp) {
     const auto tt = std::chrono::system_clock::to_time_t(tp);
-    std::tm tm{};
+    std::tm    tm{};
     gmtime_r(&tt, &tm);
     std::ostringstream ss;
     ss << std::put_time(&tm, "%d %b %Y %H:%M:%S.000");
@@ -38,57 +38,56 @@ std::string format_utc(const std::chrono::system_clock::time_point& tp) {
 struct TraceRow {
     std::chrono::system_clock::time_point utc;
     std::chrono::system_clock::time_point end_utc;
-    double off_nadir = 0.0;
-    double alpha = 0.0;
-    double vn = 0.0;
-    bool geom_visible = false;
+    double                                off_nadir    = 0.0;
+    double                                alpha        = 0.0;
+    double                                vn           = 0.0;
+    bool                                  geom_visible = false;
 };
 
 struct EclipseInterval {
     std::chrono::system_clock::time_point start;
     std::chrono::system_clock::time_point end;
-    std::string kind;
+    std::string                           kind;
 };
 
 bool in_umbra(const std::chrono::system_clock::time_point& t,
-              const std::vector<EclipseInterval>& eclipses) {
+              const std::vector<EclipseInterval>&          eclipses) {
     for (const auto& e : eclipses) {
-        if (e.kind == "Umbra" && t >= e.start && t < e.end) {
-            return true;
-        }
+        if (e.kind == "Umbra" && t >= e.start && t < e.end) { return true; }
     }
     return false;
 }
 
 }  // namespace
 
-std::vector<AccessWindow> merge_optical_windows(const std::filesystem::path& trace_path,
-                                                const std::filesystem::path& eclipse_path,
-                                                const MergeOptions& options) {
+std::vector<AccessWindow> merge_optical_windows(
+    const std::filesystem::path& trace_path,
+    const std::filesystem::path& eclipse_path,
+    const MergeOptions&          options) {
     std::vector<EclipseInterval> eclipses;
     if (std::filesystem::exists(eclipse_path)) {
         std::ifstream in(eclipse_path);
-        std::string line;
+        std::string   line;
         while (std::getline(in, line)) {
-            if (line.empty() || line.rfind("Spacecraft", 0) == 0 || line.rfind("Start Time", 0) == 0) {
+            if (line.empty() || line.rfind("Spacecraft", 0) == 0 ||
+                line.rfind("Start Time", 0) == 0) {
                 continue;
             }
-            std::istringstream ls(line);
+            std::istringstream       ls(line);
             std::vector<std::string> parts;
-            std::string token;
-            while (ls >> token) {
-                parts.push_back(token);
-            }
-            if (parts.size() < 9) {
-                continue;
-            }
+            std::string              token;
+            while (ls >> token) { parts.push_back(token); }
+            if (parts.size() < 9) { continue; }
             try {
                 EclipseInterval e;
-                e.start = parse_utc(parts[0] + " " + parts[1] + " " + parts[2] + " " + parts[3]);
-                e.end = parse_utc(parts[4] + " " + parts[5] + " " + parts[6] + " " + parts[7]);
-                e.kind = "Umbra";
+                e.start = parse_utc(parts[0] + " " + parts[1] + " " + parts[2] +
+                                    " " + parts[3]);
+                e.end   = parse_utc(parts[4] + " " + parts[5] + " " + parts[6] +
+                                    " " + parts[7]);
+                e.kind  = "Umbra";
                 for (std::size_t i = 8; i < parts.size(); ++i) {
-                    if (parts[i] == "Umbra" || parts[i] == "Penumbra" || parts[i] == "Antumbra") {
+                    if (parts[i] == "Umbra" || parts[i] == "Penumbra" ||
+                        parts[i] == "Antumbra") {
                         e.kind = parts[i];
                         break;
                     }
@@ -97,43 +96,35 @@ std::vector<AccessWindow> merge_optical_windows(const std::filesystem::path& tra
                     continue;
                 }
                 eclipses.push_back(e);
-            } catch (...) {
-                continue;
-            }
+            } catch (...) { continue; }
         }
     }
 
     std::vector<TraceRow> rows;
     {
         std::ifstream in(trace_path);
-        std::string line;
+        std::string   line;
         while (std::getline(in, line)) {
-            if (line.empty()) {
-                continue;
-            }
-            std::istringstream ls(line);
+            if (line.empty()) { continue; }
+            std::istringstream       ls(line);
             std::vector<std::string> parts;
-            std::string token;
-            while (ls >> token) {
-                parts.push_back(token);
-            }
-            if (parts.size() < 15) {
-                continue;
-            }
+            std::string              token;
+            while (ls >> token) { parts.push_back(token); }
+            if (parts.size() < 15) { continue; }
             try {
                 TraceRow row;
-                row.utc = parse_utc(parts[0] + " " + parts[1] + " " + parts[2] + " " + parts[3]);
-                row.off_nadir = std::stod(parts[7]);
-                row.alpha = std::stod(parts[10]);
+                row.utc = parse_utc(parts[0] + " " + parts[1] + " " + parts[2] +
+                                    " " + parts[3]);
+                row.off_nadir       = std::stod(parts[7]);
+                row.alpha           = std::stod(parts[10]);
                 const bool in_swath = std::stod(parts[11]) > 0.5;
-                const bool lit = std::stod(parts[12]) > 0.5;
-                const bool geom = std::stod(parts[13]) > 0.5;
-                row.geom_visible = geom && in_swath && (!options.require_sunlit || lit);
+                const bool lit      = std::stod(parts[12]) > 0.5;
+                const bool geom     = std::stod(parts[13]) > 0.5;
+                row.geom_visible =
+                    geom && in_swath && (!options.require_sunlit || lit);
                 row.vn = std::stod(parts[14]);
                 rows.push_back(row);
-            } catch (...) {
-                continue;
-            }
+            } catch (...) { continue; }
         }
     }
 
@@ -141,37 +132,42 @@ std::vector<AccessWindow> merge_optical_windows(const std::filesystem::path& tra
         rows[i].end_utc = rows[i + 1].utc;
     }
     if (!rows.empty()) {
-        rows.back().end_utc = rows.back().utc + std::chrono::milliseconds(static_cast<int>(options.step_sec * 1000));
+        rows.back().end_utc =
+            rows.back().utc + std::chrono::milliseconds(
+                                  static_cast<int>(options.step_sec * 1000));
     }
 
     std::vector<AccessWindow> windows;
-    AccessWindow* active = nullptr;
+    AccessWindow*             active = nullptr;
     for (const auto& row : rows) {
         const bool visible = row.geom_visible && !in_umbra(row.utc, eclipses) &&
                              !in_umbra(row.end_utc, eclipses);
         if (visible) {
             if (!active) {
                 windows.push_back({});
-                active = &windows.back();
+                active            = &windows.back();
                 active->start_utc = format_utc(row.utc);
-                active->end_utc = format_utc(row.end_utc);
+                active->end_utc   = format_utc(row.end_utc);
                 active->pass_type = row.vn > 0 ? "Ascending" : "Descending";
                 active->max_sun_elevation_deg = row.alpha;
-                active->min_off_nadir_deg = row.off_nadir;
-                active->t0_utc = format_utc(row.utc);
-                active->phi_deg = row.off_nadir;
-            } else {
+                active->min_off_nadir_deg     = row.off_nadir;
+                active->t0_utc                = format_utc(row.utc);
+                active->phi_deg               = row.off_nadir;
+            }
+            else {
                 active->end_utc = format_utc(row.end_utc);
-                active->max_sun_elevation_deg = std::max(active->max_sun_elevation_deg, row.alpha);
+                active->max_sun_elevation_deg =
+                    std::max(active->max_sun_elevation_deg, row.alpha);
                 if (row.off_nadir <= active->min_off_nadir_deg) {
                     active->min_off_nadir_deg = row.off_nadir;
-                    active->t0_utc = format_utc(row.utc);
-                    active->phi_deg = row.off_nadir;
+                    active->t0_utc            = format_utc(row.utc);
+                    active->phi_deg           = row.off_nadir;
                 }
             }
-        } else if (active) {
+        }
+        else if (active) {
             const auto start = parse_utc(active->start_utc);
-            const auto end = parse_utc(active->end_utc);
+            const auto end   = parse_utc(active->end_utc);
             active->duration_sec =
                 std::chrono::duration<double>(end - start).count();
             active = nullptr;
@@ -179,8 +175,9 @@ std::vector<AccessWindow> merge_optical_windows(const std::filesystem::path& tra
     }
     if (active) {
         const auto start = parse_utc(active->start_utc);
-        const auto end = parse_utc(active->end_utc);
-        active->duration_sec = std::chrono::duration<double>(end - start).count();
+        const auto end   = parse_utc(active->end_utc);
+        active->duration_sec =
+            std::chrono::duration<double>(end - start).count();
     }
     return windows;
 }

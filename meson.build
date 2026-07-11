@@ -13,7 +13,7 @@ satellite_common_dep = sdk_sp.get_variable('satellite_common_dep')
 nlohmann_json_sp = subproject('nlohmann_json')
 json_dep = nlohmann_json_sp.get_variable('nlohmann_json_dep')
 
-common_inc = include_directories('include')
+common_inc = include_directories('src')
 
 planner_lib = static_library(
   'access_computer',
