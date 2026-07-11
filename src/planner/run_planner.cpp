@@ -1,6 +1,7 @@
 #include "planner/run_planner.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -18,6 +19,14 @@ using satellite::write_text_file;
 namespace mp {
 
 namespace {
+
+std::string local_node_id() {
+    if (const char* env = std::getenv("SATELLITE_NODE_ID");
+        env != nullptr && env[0] != '\0') {
+        return env;
+    }
+    return "local";
+}
 
 std::string make_task_id() {
     const auto now =
@@ -51,6 +60,7 @@ nlohmann::json parse_contact_intervals(const std::filesystem::path& path) {
         windows.push_back({
             {"start_utc", start},
             {"end_utc", end},
+            {"node_id", local_node_id()},
         });
     }
     return windows;
@@ -87,7 +97,7 @@ double add_contact_durations(nlohmann::json& windows) {
 
 nlohmann::json make_manifest() {
     return {
-        {"schema_version", "1.0"},
+        {"schema_version", "1.1"},
         {"name", "access.remote_sensing_access"},
         {"executable", "access-computer"},
         {"version", "0.1.0"},
@@ -106,12 +116,23 @@ nlohmann::json make_manifest() {
          "schemas/remote_sensing_access.output.schema.json"},
         {"capabilities",
          {
+             {"kind", "compute"},
+             {"side_effect_class", "none"},
+             {"relocatable", true},
+             {"deterministic", true},
+             {"idempotent", false},
+             {"retryable", true},
+             {"consumes", nlohmann::json::array({"GeoPoint", "OrbitState"})},
+             {"produces", nlohmann::json::array({"WindowSet"})},
+             {"hardware_tag", nullptr},
+             {"timeout_sec", 1800},
+             {"compensation", nullptr},
+             {"cost_hint", {{"typical_latency_sec", 120}}},
              {"async", false},
              {"dry_run", true},
              {"cancel", "none"},
              {"requires_gmat", true},
              {"batch", false},
-             {"idempotent", false},
          }},
         {"resource_limits",
          {
@@ -180,6 +201,7 @@ nlohmann::json run_planner(const nlohmann::json& request,
         {"tool_name", "access.remote_sensing_access"},
         {"status", "succeeded"},
         {"scenario", scenario},
+        {"reference_utc", request.at("task").value("start_time_utc", "")},
         {"artifacts",
          {
              {"script_path", gmat_result.script_path.string()},

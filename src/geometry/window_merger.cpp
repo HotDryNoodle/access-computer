@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -183,6 +184,9 @@ std::vector<AccessWindow> merge_optical_windows(
 }
 
 nlohmann::json windows_to_json(const std::vector<AccessWindow>& windows) {
+    const char* node_env = std::getenv("SATELLITE_NODE_ID");
+    const std::string node_id =
+        (node_env != nullptr && node_env[0] != '\0') ? node_env : "local";
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& w : windows) {
         arr.push_back({
@@ -194,6 +198,7 @@ nlohmann::json windows_to_json(const std::vector<AccessWindow>& windows) {
             {"pass_type", w.pass_type},
             {"min_off_nadir_deg", w.min_off_nadir_deg},
             {"max_sun_elevation_deg", w.max_sun_elevation_deg},
+            {"node_id", node_id},
         });
     }
     return arr;

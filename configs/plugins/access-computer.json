@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "name": "access.remote_sensing_access",
   "executable": "access-computer",
   "version": "0.1.0",
@@ -11,12 +11,25 @@
   "input_schema_path": "schemas/remote_sensing_access.input.schema.json",
   "output_schema_path": "schemas/remote_sensing_access.output.schema.json",
   "capabilities": {
+    "kind": "compute",
+    "side_effect_class": "none",
+    "relocatable": true,
+    "deterministic": true,
+    "idempotent": false,
+    "retryable": true,
+    "consumes": ["GeoPoint", "OrbitState"],
+    "produces": ["WindowSet"],
+    "hardware_tag": null,
+    "timeout_sec": 1800,
+    "compensation": null,
+    "cost_hint": {
+      "typical_latency_sec": 120
+    },
     "async": false,
     "dry_run": true,
     "cancel": "none",
     "requires_gmat": true,
-    "batch": false,
-    "idempotent": false
+    "batch": false
   },
   "resource_limits": {
     "timeout_sec": 1800,

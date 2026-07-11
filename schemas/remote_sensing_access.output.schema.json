@@ -44,9 +44,18 @@
           "max_elevation_deg": {
             "type": "number",
             "description": "Reserved for downlink window peak elevation"
+          },
+          "node_id": {
+            "type": "string",
+            "description": "Node that produced this window (SATELLITE_NODE_ID or local)"
           }
-        }
+        },
+        "required": ["start_utc", "end_utc", "node_id"]
       }
+    },
+    "reference_utc": {
+      "type": "string",
+      "description": "WindowSet reference time; typically task.start_time_utc"
     },
     "attitude": {
       "type": "object",
