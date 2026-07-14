@@ -3,8 +3,8 @@
   "task": {
     "scenario": "attitude_estimation",
     "start_time_utc": "2026-12-30T03:37:00Z",
-    "elapsed_start_sec": 13300,
-    "duration_sec": 900,
+    "compute_horizon_sec": 900,
+    "working_time_sec": 900,
     "step_sec": 1
   },
   "spacecraft": {
@@ -33,7 +33,6 @@
   },
   "constraints": {
     "roll_max_deg": 70.0,
-    "task_duration_sec": 200,
     "require_sunlit": true,
     "exclude_umbra": true
   },

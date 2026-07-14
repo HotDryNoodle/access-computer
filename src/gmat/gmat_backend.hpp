@@ -8,8 +8,9 @@
  * @file gmat_backend.hpp
  * @brief GMAT 脚本渲染与控制台调用。
  *
- * 时间单位：@c elapsed_start_sec 、@c duration_sec 、@c step_sec 均为秒；
- * GMAT 传播时长以天表示（除以 86400）。
+ * 时间单位：@c compute_horizon_sec 、@c working_time_sec 、@c step_sec 均为秒；
+ * GMAT 快进使用派生 @c delta_prop_sec（start−epoch）；传播总长为
+ * (@c delta_prop_sec + @c compute_horizon_sec) / 86400 天。
  * 角度单位：字段后缀 @c _deg 为度。
  */
 

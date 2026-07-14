@@ -1,11 +1,10 @@
 {
-  "request_id": "req_gmat_compatible_2day",
-  "idempotency_key": "satA_wuhan_20261230_gmat_compatible_2day",
+  "request_id": "req_time_model_invalid_001",
   "task": {
     "scenario": "remote_sensing_access",
     "start_time_utc": "2026-12-30T00:00:00Z",
-    "compute_horizon_sec": 172800,
-    "working_time_sec": 200,
+    "compute_horizon_sec": 600,
+    "working_time_sec": 900,
     "step_sec": 10
   },
   "spacecraft": {
@@ -33,12 +32,7 @@
     "mode": "side_roll_only"
   },
   "constraints": {
-    "roll_max_deg": 70.0,
-    "require_sunlit": true,
-    "exclude_umbra": true,
-    "exclude_penumbra": false
-  },
-  "gmat": {
-    "install_root": "/home/hotdry/projects/GMAT-R2026a/GMAT-R2026a-Linux-x64"
+    "roll_max_deg": 30.0,
+    "require_sunlit": true
   }
 }

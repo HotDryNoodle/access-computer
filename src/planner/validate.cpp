@@ -3,20 +3,23 @@
 #include <algorithm>
 #include <cmath>
 
+#include "planner/time_model.hpp"
+
 namespace mp {
 
 namespace {
 
-constexpr double kAccessDefaultDurationSec = 172800.0;
-constexpr double kAccessDefaultStepSec     = 10.0;
-constexpr double kAccessDefaultRollMaxDeg  = 30.0;
-constexpr double kAttitudeMinDurationSec   = 300.0;
-constexpr double kAttitudeMaxDurationSec   = 1800.0;
-constexpr double kAttitudeDefaultStepSec   = 1.0;
-constexpr double kDownlinkMinDurationSec   = 3600.0;
-constexpr double kDownlinkMaxDurationSec   = 7200.0;
-constexpr double kDownlinkDefaultStepSec   = 5.0;
-constexpr double kDownlinkDefaultConeDeg   = 65.0;
+constexpr double kAccessDefaultHorizonSec     = 172800.0;
+constexpr double kAccessDefaultWorkingTimeSec = 200.0;
+constexpr double kAccessDefaultStepSec        = 10.0;
+constexpr double kAccessDefaultRollMaxDeg     = 30.0;
+constexpr double kAttitudeMinHorizonSec       = 300.0;
+constexpr double kAttitudeMaxHorizonSec       = 1800.0;
+constexpr double kAttitudeDefaultStepSec      = 1.0;
+constexpr double kDownlinkMinHorizonSec       = 3600.0;
+constexpr double kDownlinkMaxHorizonSec       = 7200.0;
+constexpr double kDownlinkDefaultStepSec      = 5.0;
+constexpr double kDownlinkDefaultConeDeg      = 65.0;
 
 bool has_number(const nlohmann::json& obj, const char* key) {
     return obj.contains(key) && obj[key].is_number();
@@ -77,6 +80,17 @@ ValidationResult validate_request(const nlohmann::json& request) {
     }
 
     const auto& task = request["task"];
+    if (task.contains("duration_sec") || task.contains("elapsed_start_sec")) {
+        return fail(
+            "Obsolete task fields duration_sec/elapsed_start_sec removed "
+            "(AC-004); use compute_horizon_sec and working_time_sec");
+    }
+    if (request["constraints"].contains("task_duration_sec")) {
+        return fail(
+            "Obsolete constraints.task_duration_sec removed (AC-004); use "
+            "task.working_time_sec");
+    }
+
     if (!has_string(task, "scenario")) {
         return fail("task.scenario is required");
     }
@@ -88,16 +102,27 @@ ValidationResult validate_request(const nlohmann::json& request) {
     if (!has_string(task, "start_time_utc")) {
         return fail("task.start_time_utc is required");
     }
-    if (!has_number(task, "duration_sec") ||
-        task["duration_sec"].get<double>() <= 0) {
-        return fail("task.duration_sec must be > 0");
+    if (!has_number(task, "compute_horizon_sec") ||
+        task["compute_horizon_sec"].get<double>() <= 0) {
+        return fail("task.compute_horizon_sec must be > 0");
+    }
+    if (!has_number(task, "working_time_sec") ||
+        task["working_time_sec"].get<double>() <= 0) {
+        return fail("task.working_time_sec must be > 0");
     }
     if (!has_number(task, "step_sec") || task["step_sec"].get<double>() <= 0) {
         return fail("task.step_sec must be > 0");
     }
 
-    const double duration_sec = task["duration_sec"].get<double>();
-    const double step_sec     = task["step_sec"].get<double>();
+    const double horizon_sec = task["compute_horizon_sec"].get<double>();
+    const double working_sec = task["working_time_sec"].get<double>();
+    const double step_sec    = task["step_sec"].get<double>();
+
+    if (working_sec > horizon_sec) {
+        return fail(
+            "task.working_time_sec must be <= task.compute_horizon_sec "
+            "(working window cannot exceed compute horizon)");
+    }
 
     const auto& spacecraft = request["spacecraft"];
     if (!has_string(spacecraft, "sat_id")) {
@@ -113,6 +138,32 @@ ValidationResult validate_request(const nlohmann::json& request) {
     if (!spacecraft.contains("elements") ||
         !spacecraft["elements"].is_object()) {
         return fail("spacecraft.elements is required");
+    }
+
+    const auto start_utc = task["start_time_utc"].get<std::string>();
+    const auto epoch_utc = spacecraft["epoch_utc"].get<std::string>();
+    if (!parse_iso8601_utc(start_utc)) {
+        return fail(
+            "task.start_time_utc must be ISO-8601 UTC ending with Z "
+            "(e.g. 2026-12-30T03:37:00Z)");
+    }
+    if (!parse_gmat_utcgregorian(epoch_utc)) {
+        return fail(
+            "spacecraft.epoch_utc must be GMAT UTCGregorian "
+            "(e.g. 30 Dec 2026 00:00:00.000)");
+    }
+    const auto delta_opt = delta_prop_sec(start_utc, epoch_utc);
+    if (!delta_opt) {
+        return fail(
+            "Failed to derive delta_prop_sec from start_time_utc and "
+            "epoch_utc");
+    }
+    const double delta_prop = *delta_opt;
+    if (delta_prop < -kTimeToleranceSec) {
+        return fail(
+            "task.start_time_utc is before spacecraft.epoch_utc "
+            "(delta_prop_sec=" +
+            std::to_string(delta_prop) + "); v1.0 requires start >= epoch");
     }
 
     const auto profile =
@@ -146,11 +197,11 @@ ValidationResult validate_request(const nlohmann::json& request) {
             return fail(
                 "downlink_window requires target.type = ground_station");
         }
-        if (duration_sec < kDownlinkMinDurationSec ||
-            duration_sec > kDownlinkMaxDurationSec) {
+        if (horizon_sec < kDownlinkMinHorizonSec ||
+            horizon_sec > kDownlinkMaxHorizonSec) {
             return fail(
-                "downlink_window task.duration_sec must be within [3600, 7200] "
-                "seconds (1-2 hours)");
+                "downlink_window task.compute_horizon_sec must be within "
+                "[3600, 7200] seconds (1-2 hours)");
         }
         if (step_sec < 0.1 || step_sec > 60.0) {
             return fail(
@@ -220,10 +271,10 @@ ValidationResult validate_request(const nlohmann::json& request) {
         }
 
         if (scenario == "remote_sensing_access") {
-            if (duration_sec < 60.0 || duration_sec > 604800.0) {
+            if (horizon_sec < 60.0 || horizon_sec > 604800.0) {
                 return fail(
-                    "remote_sensing_access task.duration_sec is expected "
-                    "around 172800 seconds (2 days)");
+                    "remote_sensing_access task.compute_horizon_sec is "
+                    "expected around 172800 seconds (2 days)");
             }
             if (step_sec < 0.1 || step_sec > 120.0) {
                 return fail(
@@ -241,11 +292,11 @@ ValidationResult validate_request(const nlohmann::json& request) {
         }
 
         if (scenario == "attitude_estimation") {
-            if (duration_sec < kAttitudeMinDurationSec ||
-                duration_sec > kAttitudeMaxDurationSec) {
+            if (horizon_sec < kAttitudeMinHorizonSec ||
+                horizon_sec > kAttitudeMaxHorizonSec) {
                 return fail(
-                    "attitude_estimation task.duration_sec must be within "
-                    "[300, 1800] seconds (5-30 minutes)");
+                    "attitude_estimation task.compute_horizon_sec must be "
+                    "within [300, 1800] seconds (5-30 minutes)");
             }
             if (step_sec < 0.1 || step_sec > 10.0) {
                 return fail(
@@ -261,28 +312,44 @@ ValidationResult validate_request(const nlohmann::json& request) {
         }
     }
 
-    result.ok      = true;
-    result.message = "ok";
-    result.details = {
+    result.ok              = true;
+    result.message         = "ok";
+    nlohmann::json details = {
         {"scenario", scenario},
         {"estimated_samples",
-         static_cast<int>(std::ceil(duration_sec / step_sec))},
+         static_cast<int>(std::ceil(horizon_sec / step_sec))},
         {"requires_gmat", true},
+        {"time_model",
+         {
+             {"epoch_utc", epoch_utc},
+             {"start_time_utc", start_utc},
+             {"compute_horizon_sec", horizon_sec},
+             {"working_time_sec", working_sec},
+             {"delta_prop_sec", delta_prop},
+             {"tolerance_sec", kTimeToleranceSec},
+         }},
         {"defaults",
          {
              {"remote_sensing_access",
-              {{"duration_sec", kAccessDefaultDurationSec},
+              {{"compute_horizon_sec", kAccessDefaultHorizonSec},
+               {"working_time_sec", kAccessDefaultWorkingTimeSec},
                {"step_sec", kAccessDefaultStepSec},
                {"roll_max_deg", kAccessDefaultRollMaxDeg}}},
              {"attitude_estimation",
-              {{"duration_sec", kAttitudeMaxDurationSec},
+              {{"compute_horizon_sec", kAttitudeMaxHorizonSec},
+               {"working_time_sec", kAttitudeMaxHorizonSec},
                {"step_sec", kAttitudeDefaultStepSec}}},
              {"downlink_window",
-              {{"duration_sec", kDownlinkMaxDurationSec},
+              {{"compute_horizon_sec", kDownlinkMaxHorizonSec},
+               {"working_time_sec", kDownlinkMaxHorizonSec},
                {"step_sec", kDownlinkDefaultStepSec},
                {"cone_angle_deg", kDownlinkDefaultConeDeg}}},
          }},
     };
+    if (result.details.contains("warnings")) {
+        details["warnings"] = result.details["warnings"];
+    }
+    result.details = std::move(details);
     if (spacecraft.contains("propagation_profile")) {
         result.details["propagation_profile"] =
             spacecraft["propagation_profile"];
