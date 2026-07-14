@@ -1,6 +1,6 @@
 # access-computer
 
-> **产品需求 SSOT**：在 `satellite-workspace` 父仓阅读 [`docs/prd/access-computer-v1.md`](../../docs/prd/access-computer-v1.md)（三场景 I/O、传感器矩阵、Mission 映射、WindowSet 集成验收）。**v0.1 差距矩阵**：[`docs/prd/access-computer-gap-matrix-v0.1.md`](../../docs/prd/access-computer-gap-matrix-v0.1.md)（AC-002）。本文档为实现与构建说明。
+> **产品需求 SSOT**：在 `satellite-workspace` 父仓阅读 [`docs/prd/access-computer-v1.md`](../../docs/prd/access-computer-v1.md)（三场景 I/O、传感器矩阵、Mission 映射、WindowSet 集成验收）。**v0.1 差距矩阵**：[`docs/prd/access-computer-gap-matrix-v0.1.md`](../../docs/prd/access-computer-gap-matrix-v0.1.md)（AC-002）。**接口契约（AC-003）**：[`docs/architecture/ac-003-interface-contract.md`](../../docs/architecture/ac-003-interface-contract.md)（CLI / 退出码 / work_dir / 样本路径）。**样本索引**：[`samples/README.md`](samples/README.md)。本文档为实现与构建说明。
 
 GMAT-based **Access windows compute** CLI plugin (`access.remote_sensing_access`). Distributed mission orchestration lives in [`task-manager`](https://github.com/HotDryNoodle/task-manager); this plugin only computes optical access, attitude, and downlink windows.
 
@@ -64,4 +64,7 @@ Set `RUN_GMAT_INTEGRATION=1` with `./scripts/build_and_smoke.sh` for full GMAT r
 | 3 | missing dependency |
 | 4 | no business result |
 | 5 | retryable failure |
-| 6 | fatal failure |
+| 6 | fatal failure（预留；当前路径不返回） |
+| 64 | CLI usage error |
+
+完整触发矩阵见 [AC-003 接口契约](../../docs/architecture/ac-003-interface-contract.md) §3。
