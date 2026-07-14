@@ -227,6 +227,9 @@ nlohmann::json run_planner(const nlohmann::json& request,
 
     MergeOptions options;
     options.step_sec = request.at("task").at("step_sec").get<double>();
+    // D6/D8：RSA/AE 应用 ±W/2；downlink 已提前 return。
+    options.working_time_sec =
+        request.at("task").at("working_time_sec").get<double>();
     if (request.contains("constraints")) {
         const auto& c = request.at("constraints");
         if (c.contains("exclude_penumbra")) {

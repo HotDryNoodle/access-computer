@@ -4,7 +4,8 @@
   "task": {
     "scenario": "remote_sensing_access",
     "start_time_utc": "2026-12-30T00:00:00Z",
-    "duration_sec": 172800,
+    "compute_horizon_sec": 172800,
+    "working_time_sec": 200,
     "step_sec": 10
   },
   "spacecraft": {
@@ -33,7 +34,6 @@
   },
   "constraints": {
     "roll_max_deg": 30.0,
-    "task_duration_sec": 200,
     "require_sunlit": true,
     "exclude_umbra": true,
     "exclude_penumbra": false

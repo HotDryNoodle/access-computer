@@ -34,6 +34,11 @@ struct MergeOptions {
     double step_sec         = 10.0;
     bool   exclude_penumbra = false;
     bool   require_sunlit   = true;
+    /**
+     * @brief 工作窗长 W（秒）。>0 时将窗口裁到 [t0−W/2, t0+W/2]（AC-004）。
+     *        ≤0 表示不裁剪（下行场景）。
+     */
+    double working_time_sec = 0.0;
 };
 
 /**
@@ -49,5 +54,15 @@ std::vector<AccessWindow> merge_optical_windows(
 
 /** @brief 将窗口列表转为 JSON 数组。 */
 nlohmann::json windows_to_json(const std::vector<AccessWindow>& windows);
+
+/**
+ * @brief 将窗口裁到 [t0−W/2, t0+W/2]（AC-004 D6）。
+ * @param windows 输入窗口。
+ * @param working_time_sec 工作窗长 W；≤0 时原样返回。
+ * @return 裁剪后窗口；与 [t0±W/2] 无交集的窗口被丢弃。
+ * @throws std::runtime_error 若任一窗口 UTC 字符串无法解析（禁止静默吞掉）。
+ */
+std::vector<AccessWindow> clip_windows_to_working_time(
+    const std::vector<AccessWindow>& windows, double working_time_sec);
 
 }  // namespace mp

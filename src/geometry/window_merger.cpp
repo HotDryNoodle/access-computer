@@ -1,7 +1,9 @@
 #include "geometry/window_merger.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
@@ -180,11 +182,49 @@ std::vector<AccessWindow> merge_optical_windows(
         active->duration_sec =
             std::chrono::duration<double>(end - start).count();
     }
-    return windows;
+
+    return clip_windows_to_working_time(windows, options.working_time_sec);
+}
+
+std::vector<AccessWindow> clip_windows_to_working_time(
+    const std::vector<AccessWindow>& windows, double working_time_sec) {
+    if (working_time_sec <= 0.0) { return windows; }
+
+    const double              half = working_time_sec / 2.0;
+    std::vector<AccessWindow> clipped;
+    clipped.reserve(windows.size());
+    for (std::size_t i = 0; i < windows.size(); ++i) {
+        auto                                  w = windows[i];
+        std::chrono::system_clock::time_point t0;
+        std::chrono::system_clock::time_point start;
+        std::chrono::system_clock::time_point end;
+        try {
+            t0    = parse_utc(w.t0_utc);
+            start = parse_utc(w.start_utc);
+            end   = parse_utc(w.end_utc);
+        } catch (const std::exception& ex) {
+            throw std::runtime_error(
+                "clip_windows_to_working_time: failed to parse window[" +
+                std::to_string(i) + "] UTC fields: " + ex.what());
+        }
+        const auto half_ms =
+            std::chrono::milliseconds(static_cast<std::int64_t>(half * 1000.0));
+        const auto clip_lo   = t0 - half_ms;
+        const auto clip_hi   = t0 + half_ms;
+        const auto new_start = std::max(start, clip_lo);
+        const auto new_end   = std::min(end, clip_hi);
+        if (new_end <= new_start) { continue; }  // empty after clip — drop
+        w.start_utc = format_utc(new_start);
+        w.end_utc   = format_utc(new_end);
+        w.duration_sec =
+            std::chrono::duration<double>(new_end - new_start).count();
+        clipped.push_back(std::move(w));
+    }
+    return clipped;
 }
 
 nlohmann::json windows_to_json(const std::vector<AccessWindow>& windows) {
-    const char* node_env = std::getenv("SATELLITE_NODE_ID");
+    const char*       node_env = std::getenv("SATELLITE_NODE_ID");
     const std::string node_id =
         (node_env != nullptr && node_env[0] != '\0') ? node_env : "local";
     nlohmann::json arr = nlohmann::json::array();

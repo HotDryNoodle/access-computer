@@ -19,7 +19,13 @@
     },
     "task": {
       "type": "object",
-      "required": ["scenario", "start_time_utc", "duration_sec", "step_sec"],
+      "required": [
+        "scenario",
+        "start_time_utc",
+        "compute_horizon_sec",
+        "working_time_sec",
+        "step_sec"
+      ],
       "properties": {
         "scenario": {
           "type": "string",
@@ -31,16 +37,21 @@
         },
         "start_time_utc": {
           "type": "string",
-          "description": "ISO-8601 UTC start time for the planning horizon"
+          "description": "ISO-8601 UTC task computation start epoch"
         },
-        "duration_sec": { "type": "number", "minimum": 1 },
-        "step_sec": { "type": "number", "minimum": 0.1 },
-        "elapsed_start_sec": {
+        "compute_horizon_sec": {
           "type": "number",
-          "minimum": 0,
-          "description": "Optional propagation offset from spacecraft.epoch_utc before sampling; used for short attitude refinement around a known access epoch"
-        }
-      }
+          "minimum": 1,
+          "description": "Extrapolation horizon H from start_time_utc: compute over [start, start+H]"
+        },
+        "working_time_sec": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Detection working window W; final access is [t0-W/2, t0+W/2] for RSA/AE (not applied to downlink)"
+        },
+        "step_sec": { "type": "number", "minimum": 0.1 }
+      },
+      "additionalProperties": false
     },
     "spacecraft": {
       "type": "object",
@@ -49,7 +60,7 @@
         "sat_id": { "type": "string" },
         "epoch_utc": {
           "type": "string",
-          "description": "GMAT UTCGregorian epoch string, e.g. 30 Dec 2026 00:00:00.000"
+          "description": "Orbit reference epoch for propagation (GMAT UTCGregorian), e.g. 30 Dec 2026 00:00:00.000"
         },
         "state_type": { "type": "string", "enum": ["keplerian"] },
         "elements": {
@@ -100,11 +111,6 @@
           "maximum": 90,
           "description": "Side-roll limit theta_max; default 30 deg for optical access"
         },
-        "task_duration_sec": {
-          "type": "number",
-          "minimum": 1,
-          "description": "Task execution duration tau including maneuver budget; default 200 s"
-        },
         "require_sunlit": { "type": "boolean" },
         "exclude_umbra": { "type": "boolean" },
         "exclude_penumbra": { "type": "boolean" },
@@ -114,7 +120,8 @@
           "maximum": 90,
           "description": "Ground-station cone half-angle from zenith for downlink visibility; default 65 deg, mapped to MinimumElevationAngle = 90 - cone_angle_deg"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "gmat": {
       "type": "object",

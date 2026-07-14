@@ -8,6 +8,8 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "planner/time_model.hpp"
+
 namespace mp {
 
 namespace {
@@ -107,14 +109,17 @@ std::string render_optical_access_script(
                                   ? request.at("constraints")
                                   : nlohmann::json::object();
 
-    const double duration_sec = task.at("duration_sec").get<double>();
-    // elapsed_start_sec 可选，缺省 0（与 input schema 一致）。
-    const double elapsed_start_sec =
-        task.contains("elapsed_start_sec")
-            ? task.at("elapsed_start_sec").get<double>()
-            : 0.0;
+    const double horizon_sec = task.at("compute_horizon_sec").get<double>();
+    const auto   delta_opt =
+        delta_prop_sec(task.at("start_time_utc").get<std::string>(),
+                       spacecraft.at("epoch_utc").get<std::string>());
+    if (!delta_opt) {
+        throw std::runtime_error(
+            "Failed to derive delta_prop_sec for GMAT optical script");
+    }
+    const double delta_prop_sec_v = std::max(0.0, *delta_opt);
     const double total_duration_days =
-        (elapsed_start_sec + duration_sec) / kSecondsPerDay;
+        (delta_prop_sec_v + horizon_sec) / kSecondsPerDay;
     const double step_sec = task.at("step_sec").get<double>();
     const double roll_max =
         json_get_number(constraints, "roll_max_deg", kDefaultRollMaxDeg);
@@ -141,7 +146,7 @@ std::string render_optical_access_script(
     script = replace_all(script, "{{TOTAL_DURATION_DAYS}}",
                          std::to_string(total_duration_days));
     script = replace_all(script, "{{ELAPSED_START_SEC}}",
-                         std::to_string(elapsed_start_sec));
+                         std::to_string(delta_prop_sec_v));
     script = replace_all(script, "{{STEP_SEC}}", std::to_string(step_sec));
     script = replace_all(script, "{{ROLL_MAX_DEG}}", std::to_string(roll_max));
     script = replace_all(script, "{{TARGET_LAT}}", std::to_string(tgt_lat));
@@ -165,13 +170,17 @@ std::string render_downlink_script(const nlohmann::json&        request,
                                   ? request.at("constraints")
                                   : nlohmann::json::object();
 
-    const double duration_sec = task.at("duration_sec").get<double>();
-    const double elapsed_start_sec =
-        task.contains("elapsed_start_sec")
-            ? task.at("elapsed_start_sec").get<double>()
-            : 0.0;
+    const double horizon_sec = task.at("compute_horizon_sec").get<double>();
+    const auto   delta_opt =
+        delta_prop_sec(task.at("start_time_utc").get<std::string>(),
+                       spacecraft.at("epoch_utc").get<std::string>());
+    if (!delta_opt) {
+        throw std::runtime_error(
+            "Failed to derive delta_prop_sec for GMAT downlink script");
+    }
+    const double delta_prop_sec_v = std::max(0.0, *delta_opt);
     const double total_duration_days =
-        (elapsed_start_sec + duration_sec) / kSecondsPerDay;
+        (delta_prop_sec_v + horizon_sec) / kSecondsPerDay;
     const double step_sec = task.at("step_sec").get<double>();
     const double cone_deg =
         json_get_number(constraints, "cone_angle_deg", kDefaultConeAngleDeg);
@@ -197,7 +206,7 @@ std::string render_downlink_script(const nlohmann::json&        request,
     script = replace_all(script, "{{TOTAL_DURATION_DAYS}}",
                          std::to_string(total_duration_days));
     script = replace_all(script, "{{ELAPSED_START_SEC}}",
-                         std::to_string(elapsed_start_sec));
+                         std::to_string(delta_prop_sec_v));
     script = replace_all(script, "{{STEP_SEC}}", std::to_string(step_sec));
     script = replace_all(script, "{{STATION_LAT}}",
                          std::to_string(target.at("lat_deg").get<double>()));

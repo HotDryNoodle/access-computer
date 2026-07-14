@@ -3,8 +3,8 @@
   "task": {
     "scenario": "downlink_window",
     "start_time_utc": "2026-12-30T03:00:00Z",
-    "elapsed_start_sec": 10800,
-    "duration_sec": 7200,
+    "compute_horizon_sec": 7200,
+    "working_time_sec": 7200,
     "step_sec": 5
   },
   "spacecraft": {

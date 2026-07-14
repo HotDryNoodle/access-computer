@@ -18,6 +18,7 @@ common_inc = include_directories('src')
 planner_lib = static_library(
   'access_computer',
   files(
+    'src/planner/time_model.cpp',
     'src/planner/validate.cpp',
     'src/planner/run_planner.cpp',
     'src/geometry/window_merger.cpp',
@@ -35,6 +36,15 @@ executable(
   link_with: planner_lib,
   dependencies: [satellite_common_dep, json_dep],
   install: true,
+)
+
+executable(
+  'ac004-harness',
+  'src/test/ac004_harness.cpp',
+  include_directories: common_inc,
+  link_with: planner_lib,
+  dependencies: [satellite_common_dep, json_dep],
+  install: false,
 )
 
 install_data(
