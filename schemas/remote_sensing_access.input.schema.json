@@ -118,7 +118,7 @@
           "type": "number",
           "minimum": 0,
           "maximum": 90,
-          "description": "Ground-station cone half-angle from zenith for downlink visibility; default 65 deg, mapped to MinimumElevationAngle = 90 - cone_angle_deg"
+          "description": "Ground-station cone half-angle from zenith for downlink visibility; default 80 deg (MinimumElevationAngle = 90 - cone = 10 deg ESA baseline); explicit values remain supported"
         }
       },
       "additionalProperties": false

@@ -30,9 +30,7 @@
   "sensor": {
     "type": "downlink_cone"
   },
-  "constraints": {
-    "cone_angle_deg": 65.0
-  },
+  "constraints": {},
   "gmat": {
     "install_root": "/home/hotdry/projects/GMAT-R2026a/GMAT-R2026a-Linux-x64"
   }

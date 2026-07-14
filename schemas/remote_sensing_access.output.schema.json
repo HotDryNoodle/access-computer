@@ -43,7 +43,7 @@
           "max_sun_elevation_deg": { "type": "number" },
           "max_elevation_deg": {
             "type": "number",
-            "description": "Reserved for downlink window peak elevation"
+            "description": "Downlink peak elevation (deg) from GMAT SiteViewMaxElevationReport; omit if unavailable or outside [0, 90]"
           },
           "node_id": {
             "type": "string",

@@ -19,7 +19,8 @@ constexpr double kAttitudeDefaultStepSec      = 1.0;
 constexpr double kDownlinkMinHorizonSec       = 3600.0;
 constexpr double kDownlinkMaxHorizonSec       = 7200.0;
 constexpr double kDownlinkDefaultStepSec      = 5.0;
-constexpr double kDownlinkDefaultConeDeg      = 65.0;
+/** AC-007：默认 cone 80° → MinimumElevationAngle 10°。 */
+constexpr double kDownlinkDefaultConeDeg = 80.0;
 
 bool has_number(const nlohmann::json& obj, const char* key) {
     return obj.contains(key) && obj[key].is_number();
@@ -214,6 +215,10 @@ ValidationResult validate_request(const nlohmann::json& request) {
                 "constraints.cone_angle_deg must be in (0, 90] for "
                 "downlink_window");
         }
+        result.details["downlink"] = {
+            {"cone_angle_deg", cone},
+            {"min_elevation_deg", 90.0 - cone},
+        };
         if (request.contains("sensor")) {
             if (!request["sensor"].is_object()) {
                 return fail("sensor must be an object when provided");
@@ -348,6 +353,9 @@ ValidationResult validate_request(const nlohmann::json& request) {
     };
     if (result.details.contains("warnings")) {
         details["warnings"] = result.details["warnings"];
+    }
+    if (result.details.contains("downlink")) {
+        details["downlink"] = result.details["downlink"];
     }
     result.details = std::move(details);
     if (spacecraft.contains("propagation_profile")) {

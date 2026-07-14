@@ -9,7 +9,7 @@
 | `remote_sensing_access_gmat_compatible_2day.json` | `remote_sensing_access` | GMAT 2day 回归 | validate 0；真跑需 GMAT |
 | `short_access.json` | `remote_sensing_access` | 短窗；H=600，W=200 | validate 0 |
 | `attitude_estimation.json` | `attitude_estimation` | 凝视；H=W=900；start=03:37 → Δ_prop≈13020 | validate 0；dry-run OK |
-| `downlink_window.json` | `downlink_window` | 下行；H=W=7200；start=03:00 → Δ_prop=10800 | validate 0；无 ±W/2 裁剪 |
+| `downlink_window.json` | `downlink_window` | 下行默认；H=W=7200；**省略** `cone_angle_deg` → 80°/门限 10° | validate 0；details.downlink 回显 |
 | `downlink_window_permissive.json` | `downlink_window` | cone 90° | validate 0 |
 | `sar_unsupported.json` | `remote_sensing_access` | SAR 负例 | validate **exit 2** |
 | `time_model_invalid.json` | `remote_sensing_access` | W>H 负例（AC-004） | validate **exit 2** |

@@ -10,6 +10,7 @@
 
 #include "geometry/window_merger.hpp"
 #include "gmat/gmat_backend.hpp"
+#include "planner/contact_windows.hpp"
 #include "planner/validate.hpp"
 #include "satellite/json_io.hpp"
 
@@ -20,50 +21,12 @@ namespace mp {
 
 namespace {
 
-std::string local_node_id() {
-    if (const char* env = std::getenv("SATELLITE_NODE_ID");
-        env != nullptr && env[0] != '\0') {
-        return env;
-    }
-    return "local";
-}
-
 std::string make_task_id() {
     const auto now =
         std::chrono::system_clock::now().time_since_epoch().count();
     std::ostringstream ss;
     ss << "task_" << now;
     return ss.str();
-}
-
-nlohmann::json parse_contact_intervals(const std::filesystem::path& path) {
-    nlohmann::json windows = nlohmann::json::array();
-    if (!std::filesystem::exists(path)) { return windows; }
-    std::ifstream in(path);
-    std::string   line;
-    while (std::getline(in, line)) {
-        if (line.empty() || line.rfind("Spacecraft", 0) == 0 ||
-            line.rfind("Start Time", 0) == 0 ||
-            line.find("There are no contact") != std::string::npos ||
-            line.find("Number of events") != std::string::npos) {
-            continue;
-        }
-        std::istringstream       ls(line);
-        std::vector<std::string> parts;
-        std::string              token;
-        while (ls >> token) { parts.push_back(token); }
-        if (parts.size() < 8) { continue; }
-        const auto start =
-            parts[0] + " " + parts[1] + " " + parts[2] + " " + parts[3];
-        const auto end =
-            parts[4] + " " + parts[5] + " " + parts[6] + " " + parts[7];
-        windows.push_back({
-            {"start_utc", start},
-            {"end_utc", end},
-            {"node_id", local_node_id()},
-        });
-    }
-    return windows;
 }
 
 std::chrono::system_clock::time_point parse_contact_utc(std::string text) {
@@ -212,11 +175,15 @@ nlohmann::json run_planner(const nlohmann::json& request,
 
     if (scenario == "downlink_window") {
         const auto   contact_path = ctx.work_dir / "contact_intervals.txt";
-        auto         windows      = parse_contact_intervals(contact_path);
+        auto         parsed       = parse_contact_windows(contact_path);
+        auto&        windows      = parsed.windows;
         const double total_sec    = add_contact_durations(windows);
         output["windows"]         = windows;
         output["summary"]         = {{"window_count", windows.size()},
                                      {"duration_total_sec", total_sec}};
+        for (const auto& w : parsed.warnings) {
+            output["warnings"].push_back(w);
+        }
         output["artifacts"]["contact_path"] =
             std::filesystem::absolute(contact_path).string();
         if (windows.empty()) { output["status"] = "no_result"; }

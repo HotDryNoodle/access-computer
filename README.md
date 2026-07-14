@@ -30,7 +30,7 @@ Depends on **satellite-plugin-sdk** via Meson wrap (`subprojects/satellite-plugi
 |----------|---------|------|--------|-------------|
 | `remote_sensing_access` | 2 days (`172800 s`) | `10 s` | optical linescan / area array | access windows, `t0_utc`, `phi_deg` |
 | `attitude_estimation` | 5-30 min (`300-1800 s`) | `1 s` | optical area array (`stare`) | `attitude.t0_utc`, `attitude.phi_deg` |
-| `downlink_window` | 1-2 h (`3600-7200 s`) | `5 s` | `downlink_cone` (optional) | `[start_utc, end_utc]` contact windows |
+| `downlink_window` | 1-2 h (`3600-7200 s`) | `5 s` | `downlink_cone` (optional) | `[start_utc, end_utc, max_elevation_deg]` |
 
 ### Sensor support matrix (v0.1.0)
 
@@ -39,7 +39,7 @@ Depends on **satellite-plugin-sdk** via Meson wrap (`subprojects/satellite-plugi
 | `optical_linescan` + `side_roll_only` | supported | supported | Matches GMAT `Ex_OpticalSSO_Access` geometry |
 | `optical_area_array` + `stare` | supported | supported | `pitch_deg` is placeholder only |
 | `sar` | not implemented | not implemented | rejected unless `experimental.allow_sar=true` |
-| `downlink_cone` | n/a | n/a | Downlink only; `cone_angle_deg` default `65` |
+| `downlink_cone` | n/a | n/a | Downlink only; `cone_angle_deg` default `80` → min elev `10°` |
 
 ## CLI usage
 

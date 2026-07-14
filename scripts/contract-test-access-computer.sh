@@ -193,6 +193,39 @@ else
   assert_eq "ac004-harness exit" "$got" "0"
 fi
 
+echo "==> [14] AC-007 default cone (omit cone_angle_deg -> 80/10)"
+set +e
+out="$("$EXE" validate --input "$ROOT/samples/downlink_window.json" --output json 2>/dev/null)"
+got=$?
+set -e
+assert_eq "AC-007 DL validate exit" "$got" "0"
+printf '%s' "$out" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+dl=(d.get("details") or {}).get("downlink") or {}
+cone=float(dl.get("cone_angle_deg", -1))
+mine=float(dl.get("min_elevation_deg", -1))
+if abs(cone-80.0)>1e-9:
+    raise SystemExit("expected cone 80, got %s" % cone)
+if abs(mine-10.0)>1e-9:
+    raise SystemExit("expected min_elev 10, got %s" % mine)
+'
+echo "  OK  AC-007 default cone 80 / min_elev 10"
+pass=$((pass + 1))
+
+echo "==> [15] AC-007 harness (MaxElev parse / D7 / cone defaults)"
+HARNESS7="$BUILD/ac007-harness"
+if [[ ! -x "$HARNESS7" ]]; then
+  echo "missing harness: $HARNESS7 (meson compile -C build)" >&2
+  fail=$((fail + 1))
+else
+  set +e
+  "$HARNESS7"
+  got=$?
+  set -e
+  assert_eq "ac007-harness exit" "$got" "0"
+fi
+
 rm -rf "$WORK_BASE"
 
 echo "==> summary: pass=$pass fail=$fail"

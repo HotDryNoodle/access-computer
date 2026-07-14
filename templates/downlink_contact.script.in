@@ -55,6 +55,8 @@ ContactLoc.RunMode = Automatic;
 ContactLoc.UseEntireInterval = true;
 ContactLoc.Observers = {Station};
 ContactLoc.LightTimeDirection = Transmit;
+ContactLoc.ReportFormat = 'SiteViewMaxElevationReport';
+ContactLoc.ReportTimeFormat = 'UTCGregorian';
 
 BeginMissionSequence;
 

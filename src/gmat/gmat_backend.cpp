@@ -44,10 +44,10 @@ double json_get_number(const nlohmann::json& obj,
     return fallback;
 }
 
-/** 合同默认：光学 roll_max_deg=30°，下行 cone_angle_deg=65°（见 input
- * schema）。 */
+/** 合同默认：光学 roll_max_deg=30°；下行 cone_angle_deg=80° → 最低仰角 10°
+ * （AC-007 / ESA 10° 基线）。 */
 constexpr double kDefaultRollMaxDeg   = 30.0;
-constexpr double kDefaultConeAngleDeg = 65.0;
+constexpr double kDefaultConeAngleDeg = 80.0;
 /** 秒/天换算，用于 GMAT 传播时长。 */
 constexpr double kSecondsPerDay = 86400.0;
 

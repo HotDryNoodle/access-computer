@@ -20,6 +20,7 @@ planner_lib = static_library(
   files(
     'src/planner/time_model.cpp',
     'src/planner/validate.cpp',
+    'src/planner/contact_windows.cpp',
     'src/planner/run_planner.cpp',
     'src/geometry/window_merger.cpp',
     'src/gmat/gmat_backend.cpp',
@@ -41,6 +42,15 @@ executable(
 executable(
   'ac004-harness',
   'src/test/ac004_harness.cpp',
+  include_directories: common_inc,
+  link_with: planner_lib,
+  dependencies: [satellite_common_dep, json_dep],
+  install: false,
+)
+
+executable(
+  'ac007-harness',
+  'src/test/ac007_harness.cpp',
   include_directories: common_inc,
   link_with: planner_lib,
   dependencies: [satellite_common_dep, json_dep],
