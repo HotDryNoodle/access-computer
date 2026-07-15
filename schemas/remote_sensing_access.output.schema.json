@@ -66,11 +66,12 @@
         "phi_deg": { "type": "number" },
         "pitch_deg": {
           "type": "number",
-          "description": "Placeholder in v0.1.0 for stare mode; not a validated pointing solution"
+          "description": "Signed along-track pitch (deg) at refined t0; computed from EarthMJ2000Eq LOS (AC-008)"
         },
         "pitch_status": {
           "type": "string",
-          "enum": ["placeholder", "computed"]
+          "enum": ["placeholder", "computed"],
+          "description": "New runs emit computed only; placeholder retained for historical result compatibility"
         }
       }
     },

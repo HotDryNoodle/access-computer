@@ -23,6 +23,7 @@ planner_lib = static_library(
     'src/planner/contact_windows.cpp',
     'src/planner/run_planner.cpp',
     'src/geometry/window_merger.cpp',
+    'src/geometry/attitude_solver.cpp',
     'src/gmat/gmat_backend.cpp',
   ),
   include_directories: common_inc,
@@ -72,6 +73,16 @@ executable(
   include_directories: common_inc,
   link_with: planner_lib,
   dependencies: [satellite_common_dep, json_dep],
+  install: false,
+)
+
+executable(
+  'ac008-harness',
+  'src/test/ac008_harness.cpp',
+  include_directories: common_inc,
+  link_with: planner_lib,
+  dependencies: [satellite_common_dep, json_dep],
+  cpp_args: ['-DACCESS_COMPUTER_SOURCE_ROOT="@0@"'.format(meson.current_source_dir())],
   install: false,
 )
 

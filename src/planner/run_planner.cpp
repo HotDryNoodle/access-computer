@@ -8,10 +8,12 @@
 #include <random>
 #include <sstream>
 
+#include "geometry/attitude_solver.hpp"
 #include "geometry/window_merger.hpp"
 #include "gmat/gmat_backend.hpp"
 #include "planner/contact_windows.hpp"
 #include "planner/validate.hpp"
+#include "satellite/exit_codes.hpp"
 #include "satellite/json_io.hpp"
 
 using satellite::write_json_file;
@@ -57,6 +59,39 @@ double add_contact_durations(nlohmann::json& windows) {
 }
 
 }  // namespace
+
+void apply_attitude_estimation_result(nlohmann::json&             output,
+                                      const AttitudeRefineResult& refined,
+                                      const std::string&          mode) {
+    for (const auto& w : refined.warnings) { output["warnings"].push_back(w); }
+    if (!refined.ok) {
+        // AC-003：no_result ⇒ 空 windows[] + 零 summary；保留 artifacts/warning
+        output["status"]  = "no_result";
+        output["windows"] = nlohmann::json::array();
+        output["summary"] = {{"window_count", 0}, {"duration_total_sec", 0.0}};
+        output.erase("attitude");
+        return;
+    }
+    output["windows"] = windows_to_json(refined.windows);
+    double total_sec  = 0.0;
+    for (const auto& w : refined.windows) { total_sec += w.duration_sec; }
+    output["summary"]  = {{"window_count", refined.windows.size()},
+                          {"duration_total_sec", total_sec}};
+    output["attitude"] = {
+        {"mode", mode},
+        {"t0_utc", refined.t0_utc},
+        {"phi_deg", refined.phi_deg},
+        {"pitch_deg", refined.pitch_deg},
+        {"pitch_status", refined.pitch_status},
+    };
+}
+
+int run_status_exit_code(const nlohmann::json& output) {
+    if (output.value("status", "") == "no_result") {
+        return satellite::EXIT_NO_RESULT;
+    }
+    return satellite::EXIT_OK;
+}
 
 nlohmann::json make_manifest() {
     return {
@@ -229,21 +264,9 @@ nlohmann::json run_planner(const nlohmann::json& request,
 
     if (scenario == "attitude_estimation" && !windows.empty()) {
         const auto mode = request.at("sensor").value("mode", "side_roll_only");
-        output["attitude"] = {
-            {"mode", mode},
-            {"t0_utc", windows.front().t0_utc},
-            {"phi_deg", windows.front().phi_deg},
-            {"pitch_deg", 0.0},
-            {"pitch_status", "computed"},
-        };
-        if (mode == "stare") {
-            output["attitude"]["pitch_deg"] =
-                windows.front().min_off_nadir_deg * 0.1;
-            output["attitude"]["pitch_status"] = "placeholder";
-            output["warnings"].push_back(
-                "Stare pitch_deg is a placeholder estimate in v0.1.0; use "
-                "phi_deg/t0_utc as the validated outputs");
-        }
+        const auto refined =
+            refine_attitude_windows(gmat_result.ephemeris_csv, windows, mode);
+        apply_attitude_estimation_result(output, refined, mode);
     }
 
     write_json_file(ctx.work_dir / "result.json", output, true);

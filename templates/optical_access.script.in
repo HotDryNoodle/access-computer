@@ -215,7 +215,7 @@ While Sat.ElapsedDays < {{TOTAL_DURATION_DAYS}}
    EndIf;
 
    Report TraceReport Sat.UTCGregorian Sat.Earth.Latitude Sat.Earth.Longitude altKm offNadirDeg groundRangeKm swathHalf alphaSun inSwath lit geomVisible vn;
-   Report RvReport Sat.UTCGregorian Sat.X Sat.Y Sat.Z Sat.VX Sat.VY Sat.VZ;
+   Report RvReport Sat.UTCGregorian Sat.EarthMJ2000Eq.X Sat.EarthMJ2000Eq.Y Sat.EarthMJ2000Eq.Z Sat.EarthMJ2000Eq.VX Sat.EarthMJ2000Eq.VY Sat.EarthMJ2000Eq.VZ TargetA.EarthMJ2000Eq.X TargetA.EarthMJ2000Eq.Y TargetA.EarthMJ2000Eq.Z;
 
    Propagate Prop(Sat) {Sat.ElapsedSecs = stepSec};
 

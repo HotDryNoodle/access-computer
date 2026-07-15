@@ -37,7 +37,7 @@ Depends on **satellite-plugin-sdk** via Meson wrap (`subprojects/satellite-plugi
 | Sensor | Access windows | Attitude | Notes |
 |--------|----------------|----------|-------|
 | `optical_linescan` + `side_roll_only` | supported | supported | Matches GMAT `Ex_OpticalSSO_Access` geometry |
-| `optical_area_array` + `stare` | supported | supported | `pitch_deg` is placeholder only |
+| `optical_area_array` + `stare` | supported | supported | AE `pitch_deg` computed (AC-008); RSA windows unchanged |
 | `sar` | not implemented | not implemented | rejected unless `experimental.allow_sar=true` |
 | `downlink_cone` | n/a | n/a | Downlink only; `cone_angle_deg` default `80` → min elev `10°` |
 

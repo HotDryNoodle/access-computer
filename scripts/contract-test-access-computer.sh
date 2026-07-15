@@ -252,6 +252,19 @@ else
   assert_eq "ac006-harness exit" "$got" "0"
 fi
 
+echo "==> [18] AC-008 harness (pitch/t0 refine G/I/P/A)"
+HARNESS8="$BUILD/ac008-harness"
+if [[ ! -x "$HARNESS8" ]]; then
+  echo "missing harness: $HARNESS8 (meson compile -C build)" >&2
+  fail=$((fail + 1))
+else
+  set +e
+  "$HARNESS8"
+  got=$?
+  set -e
+  assert_eq "ac008-harness exit" "$got" "0"
+fi
+
 rm -rf "$WORK_BASE"
 
 echo "==> summary: pass=$pass fail=$fail"

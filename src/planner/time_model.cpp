@@ -58,7 +58,9 @@ std::optional<std::chrono::system_clock::time_point> finish_time_point(
     }
 
     auto tp = std::chrono::system_clock::from_time_t(tt);
-    if (frac_sec < 0.0 || frac_sec >= 1.0) { return std::nullopt; }
+    if (!std::isfinite(frac_sec) || frac_sec < 0.0 || frac_sec >= 1.0) {
+        return std::nullopt;
+    }
     if (frac_sec > 0.0) {
         tp += std::chrono::duration_cast<std::chrono::system_clock::duration>(
             std::chrono::duration<double>(frac_sec));

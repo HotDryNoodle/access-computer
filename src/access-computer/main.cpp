@@ -210,10 +210,7 @@ int main(int argc, char** argv) {
             }
             const auto output = mp::run_planner(request, ctx);
             satellite::write_json_stdout(output, opts.pretty);
-            if (output.value("status", "") == "no_result") {
-                return satellite::EXIT_NO_RESULT;
-            }
-            return satellite::EXIT_OK;
+            return mp::run_status_exit_code(output);
         }
 
         std::cerr << "Unknown command: " << opts.command << '\n';
