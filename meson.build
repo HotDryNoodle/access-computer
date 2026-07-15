@@ -57,6 +57,15 @@ executable(
   install: false,
 )
 
+executable(
+  'ac005-harness',
+  'src/test/ac005_harness.cpp',
+  include_directories: common_inc,
+  link_with: planner_lib,
+  dependencies: [satellite_common_dep, json_dep],
+  install: false,
+)
+
 install_data(
   'schemas/remote_sensing_access.input.schema.json',
   'schemas/remote_sensing_access.output.schema.json',
