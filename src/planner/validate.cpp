@@ -52,6 +52,50 @@ bool experimental_allows_sar(const nlohmann::json& request) {
 
 }  // namespace
 
+bool has_illumination_constraint_flags(const nlohmann::json& constraints) {
+    return constraints.contains("require_sunlit") ||
+           constraints.contains("exclude_umbra") ||
+           constraints.contains("exclude_penumbra");
+}
+
+OpticalIlluminationResolved resolve_optical_illumination(
+    const nlohmann::json& request) {
+    OpticalIlluminationResolved out;
+    const bool                  is_sar = request.contains("sensor") &&
+                        request["sensor"].is_object() &&
+                        request["sensor"].value("type", "") == "sar";
+
+    const nlohmann::json* constraints = nullptr;
+    if (request.contains("constraints") && request["constraints"].is_object()) {
+        constraints = &request["constraints"];
+    }
+
+    if (is_sar) {
+        // D8：SAR 有效三旗全部关闭，不读取请求值。
+        out.require_sunlit   = false;
+        out.exclude_umbra    = false;
+        out.exclude_penumbra = false;
+        if (constraints != nullptr &&
+            has_illumination_constraint_flags(*constraints)) {
+            out.warnings.push_back(kIlluminationFlagsIgnoredSar);
+        }
+        return out;
+    }
+
+    if (constraints == nullptr) { return out; }
+    const auto& c = *constraints;
+    if (c.contains("exclude_umbra") && c["exclude_umbra"].is_boolean()) {
+        out.exclude_umbra = c["exclude_umbra"].get<bool>();
+    }
+    if (c.contains("exclude_penumbra") && c["exclude_penumbra"].is_boolean()) {
+        out.exclude_penumbra = c["exclude_penumbra"].get<bool>();
+    }
+    if (c.contains("require_sunlit") && c["require_sunlit"].is_boolean()) {
+        out.require_sunlit = c["require_sunlit"].get<bool>();
+    }
+    return out;
+}
+
 ValidationResult validate_request(const nlohmann::json& request) {
     ValidationResult result;
     result.details = nlohmann::json::object();
@@ -219,6 +263,10 @@ ValidationResult validate_request(const nlohmann::json& request) {
             {"cone_angle_deg", cone},
             {"min_elevation_deg", 90.0 - cone},
         };
+        if (has_illumination_constraint_flags(constraints)) {
+            result.details["warnings"] =
+                nlohmann::json::array({kIlluminationFlagsIgnoredDownlink});
+        }
         if (request.contains("sensor")) {
             if (!request["sensor"].is_object()) {
                 return fail("sensor must be an object when provided");
@@ -246,6 +294,10 @@ ValidationResult validate_request(const nlohmann::json& request) {
                 return fail(
                     "sensor.type=sar is not implemented in v0.1.0; set "
                     "experimental.allow_sar=true only for contract testing");
+            }
+            if (has_illumination_constraint_flags(constraints)) {
+                result.details["warnings"] =
+                    nlohmann::json::array({kIlluminationFlagsIgnoredSar});
             }
         }
         else if (sensor_type == "optical_linescan") {

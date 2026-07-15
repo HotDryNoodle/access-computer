@@ -60,7 +60,7 @@ Create EclipseLocator EclLoc;
 
 EclLoc.Spacecraft         = Sat;
 EclLoc.OccultingBodies    = {Earth};
-EclLoc.EclipseTypes       = {'Umbra', 'Penumbra'};
+EclLoc.EclipseTypes       = {'Umbra', 'Penumbra', 'Antumbra'};
 EclLoc.RunMode            = Automatic;
 EclLoc.UseEntireInterval  = true;
 EclLoc.WriteReport        = true;
@@ -208,7 +208,7 @@ While Sat.ElapsedDays < {{TOTAL_DURATION_DAYS}}
       lit = 0.0;
    EndIf;
 
-   If inSwath > 0.5 & lit > 0.5
+   If inSwath > 0.5
       geomVisible = 1.0;
    Else
       geomVisible = 0.0;

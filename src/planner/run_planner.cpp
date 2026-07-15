@@ -174,6 +174,10 @@ nlohmann::json run_planner(const nlohmann::json& request,
     };
 
     if (scenario == "downlink_window") {
+        if (request.contains("constraints") &&
+            has_illumination_constraint_flags(request.at("constraints"))) {
+            output["warnings"].push_back(kIlluminationFlagsIgnoredDownlink);
+        }
         const auto   contact_path = ctx.work_dir / "contact_intervals.txt";
         auto         parsed       = parse_contact_windows(contact_path);
         auto&        windows      = parsed.windows;
@@ -197,18 +201,18 @@ nlohmann::json run_planner(const nlohmann::json& request,
     // D6/D8：RSA/AE 应用 ±W/2；downlink 已提前 return。
     options.working_time_sec =
         request.at("task").at("working_time_sec").get<double>();
-    if (request.contains("constraints")) {
-        const auto& c = request.at("constraints");
-        if (c.contains("exclude_penumbra")) {
-            options.exclude_penumbra = c.at("exclude_penumbra").get<bool>();
-        }
-        if (c.contains("require_sunlit")) {
-            options.require_sunlit = c.at("require_sunlit").get<bool>();
-        }
-    }
+    // AC-006：光学读三旗；SAR 强制全关 + ignored warning（与 validate
+    // 同文案）。
+    const auto illum         = resolve_optical_illumination(request);
+    options.require_sunlit   = illum.require_sunlit;
+    options.exclude_umbra    = illum.exclude_umbra;
+    options.exclude_penumbra = illum.exclude_penumbra;
+    for (const auto& w : illum.warnings) { output["warnings"].push_back(w); }
 
-    const auto windows = merge_optical_windows(
+    const auto merged = merge_optical_windows(
         gmat_result.trace_path, gmat_result.eclipse_path, options);
+    const auto& windows = merged.windows;
+    for (const auto& w : merged.warnings) { output["warnings"].push_back(w); }
     double total_sec = 0.0;
     for (const auto& w : windows) { total_sec += w.duration_sec; }
 

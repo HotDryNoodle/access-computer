@@ -111,9 +111,18 @@
           "maximum": 90,
           "description": "Side-roll limit theta_max; default 30 deg for optical access"
         },
-        "require_sunlit": { "type": "boolean" },
-        "exclude_umbra": { "type": "boolean" },
-        "exclude_penumbra": { "type": "boolean" },
+        "require_sunlit": {
+          "type": "boolean",
+          "description": "Optical: require target sunlit (lit); default true when omitted for RSA optical (warning). Ignored for SAR/DL with warning."
+        },
+        "exclude_umbra": {
+          "type": "boolean",
+          "description": "Optical: exclude Umbra when eclipse report available (default true). Best-effort skip+warning if report missing. Ignored for SAR/DL."
+        },
+        "exclude_penumbra": {
+          "type": "boolean",
+          "description": "Optical: exclude Penumbra and Antumbra when eclipse report available (default false). Best-effort skip+warning if report missing. Ignored for SAR/DL."
+        },
         "cone_angle_deg": {
           "type": "number",
           "minimum": 0,

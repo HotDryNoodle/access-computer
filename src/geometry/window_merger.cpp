@@ -41,10 +41,11 @@ std::string format_utc(const std::chrono::system_clock::time_point& tp) {
 struct TraceRow {
     std::chrono::system_clock::time_point utc;
     std::chrono::system_clock::time_point end_utc;
-    double                                off_nadir    = 0.0;
-    double                                alpha        = 0.0;
-    double                                vn           = 0.0;
-    bool                                  geom_visible = false;
+    double                                off_nadir = 0.0;
+    double                                alpha     = 0.0;
+    double                                vn        = 0.0;
+    bool                                  in_swath  = false;
+    bool                                  lit       = false;
 };
 
 struct EclipseInterval {
@@ -53,54 +54,142 @@ struct EclipseInterval {
     std::string                           kind;
 };
 
-bool in_umbra(const std::chrono::system_clock::time_point& t,
-              const std::vector<EclipseInterval>&          eclipses) {
+bool in_kind(const std::chrono::system_clock::time_point& t,
+             const std::vector<EclipseInterval>&          eclipses,
+             const std::string&                           kind) {
     for (const auto& e : eclipses) {
-        if (e.kind == "Umbra" && t >= e.start && t < e.end) { return true; }
+        if (e.kind == kind && t >= e.start && t < e.end) { return true; }
     }
     return false;
 }
 
+bool blocked_by_eclipse(const std::chrono::system_clock::time_point& t,
+                        const std::vector<EclipseInterval>&          eclipses,
+                        const MergeOptions&                          options) {
+    if (options.exclude_umbra && in_kind(t, eclipses, "Umbra")) { return true; }
+    if (options.exclude_penumbra && (in_kind(t, eclipses, "Penumbra") ||
+                                     in_kind(t, eclipses, "Antumbra"))) {
+        return true;
+    }
+    return false;
+}
+
+enum class EclipseReportStatus {
+    MissingOrUnreadable,
+    EmptyValid,
+    HasEvents,
+};
+
+EclipseReportStatus load_eclipses(const std::filesystem::path&  path,
+                                  std::vector<EclipseInterval>* out) {
+    if (!std::filesystem::exists(path)) {
+        return EclipseReportStatus::MissingOrUnreadable;
+    }
+    std::ifstream in(path);
+    if (!in) { return EclipseReportStatus::MissingOrUnreadable; }
+
+    bool        saw_event           = false;
+    bool        saw_no_event_marker = false;
+    bool        saw_unreadable      = false;
+    bool        any_nonempty_line   = false;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) { continue; }
+        any_nonempty_line = true;
+        if (line.rfind("Spacecraft", 0) == 0 ||
+            line.rfind("Start Time", 0) == 0) {
+            continue;
+        }
+        // 合法 GMAT 无事件标记（仅此类可 EmptyValid）。
+        if (line.find("There are no") != std::string::npos) {
+            saw_no_event_marker = true;
+            continue;
+        }
+        if (line.find("Number of events") != std::string::npos) {
+            std::istringstream ns(line);
+            std::string        tok;
+            int                n_events = -1;
+            while (ns >> tok) {
+                try {
+                    n_events = std::stoi(tok);
+                } catch (...) {
+                    // keep scanning for a trailing integer
+                }
+            }
+            if (n_events == 0) {
+                saw_no_event_marker = true;
+                continue;
+            }
+            // 非 0 或无法解析数字：若最终无事件行则视为不可读
+            if (n_events < 0) { saw_unreadable = true; }
+            continue;
+        }
+
+        std::istringstream       ls(line);
+        std::vector<std::string> parts;
+        std::string              token;
+        while (ls >> token) { parts.push_back(token); }
+        // 事件行至少两段 UTC（各 4 token）+ kind → ≥9
+        if (parts.size() < 9) {
+            saw_unreadable = true;
+            continue;
+        }
+        try {
+            EclipseInterval e;
+            e.start = parse_utc(parts[0] + " " + parts[1] + " " + parts[2] +
+                                " " + parts[3]);
+            e.end = parse_utc(parts[4] + " " + parts[5] + " " + parts[6] + " " +
+                              parts[7]);
+            std::string kind;
+            for (std::size_t i = 8; i < parts.size(); ++i) {
+                if (parts[i] == "Umbra" || parts[i] == "Penumbra" ||
+                    parts[i] == "Antumbra") {
+                    kind = parts[i];
+                    break;
+                }
+            }
+            // 未知 kind 不得默认 Umbra → 整份报告不可读
+            if (kind.empty()) {
+                saw_unreadable = true;
+                continue;
+            }
+            e.kind = kind;
+            out->push_back(e);
+            saw_event = true;
+        } catch (...) { saw_unreadable = true; }
+    }
+
+    // 任一畸形/截断/未知 kind 优先于 HasEvents（丢弃已解析事件）
+    if (saw_unreadable) {
+        out->clear();
+        return EclipseReportStatus::MissingOrUnreadable;
+    }
+    if (saw_event) { return EclipseReportStatus::HasEvents; }
+    // 空文件、仅表头、无合法无事件标记 → unavailable
+    if (!any_nonempty_line || !saw_no_event_marker) {
+        return EclipseReportStatus::MissingOrUnreadable;
+    }
+    return EclipseReportStatus::EmptyValid;
+}
+
 }  // namespace
 
-std::vector<AccessWindow> merge_optical_windows(
+OpticalMergeResult merge_optical_windows(
     const std::filesystem::path& trace_path,
     const std::filesystem::path& eclipse_path,
     const MergeOptions&          options) {
+    OpticalMergeResult result;
+
     std::vector<EclipseInterval> eclipses;
-    if (std::filesystem::exists(eclipse_path)) {
-        std::ifstream in(eclipse_path);
-        std::string   line;
-        while (std::getline(in, line)) {
-            if (line.empty() || line.rfind("Spacecraft", 0) == 0 ||
-                line.rfind("Start Time", 0) == 0) {
-                continue;
-            }
-            std::istringstream       ls(line);
-            std::vector<std::string> parts;
-            std::string              token;
-            while (ls >> token) { parts.push_back(token); }
-            if (parts.size() < 9) { continue; }
-            try {
-                EclipseInterval e;
-                e.start = parse_utc(parts[0] + " " + parts[1] + " " + parts[2] +
-                                    " " + parts[3]);
-                e.end   = parse_utc(parts[4] + " " + parts[5] + " " + parts[6] +
-                                    " " + parts[7]);
-                e.kind  = "Umbra";
-                for (std::size_t i = 8; i < parts.size(); ++i) {
-                    if (parts[i] == "Umbra" || parts[i] == "Penumbra" ||
-                        parts[i] == "Antumbra") {
-                        e.kind = parts[i];
-                        break;
-                    }
-                }
-                if (options.exclude_penumbra && e.kind == "Penumbra") {
-                    continue;
-                }
-                eclipses.push_back(e);
-            } catch (...) { continue; }
+    const auto report_status = load_eclipses(eclipse_path, &eclipses);
+    const bool need_eclipse = options.exclude_umbra || options.exclude_penumbra;
+    bool       apply_eclipse = true;
+    if (report_status == EclipseReportStatus::MissingOrUnreadable) {
+        if (need_eclipse) {
+            result.warnings.push_back(kEclipseFilterUnavailableWarning);
+            apply_eclipse = false;
         }
+        else { apply_eclipse = false; }
     }
 
     std::vector<TraceRow> rows;
@@ -118,14 +207,11 @@ std::vector<AccessWindow> merge_optical_windows(
                 TraceRow row;
                 row.utc = parse_utc(parts[0] + " " + parts[1] + " " + parts[2] +
                                     " " + parts[3]);
-                row.off_nadir       = std::stod(parts[7]);
-                row.alpha           = std::stod(parts[10]);
-                const bool in_swath = std::stod(parts[11]) > 0.5;
-                const bool lit      = std::stod(parts[12]) > 0.5;
-                const bool geom     = std::stod(parts[13]) > 0.5;
-                row.geom_visible =
-                    geom && in_swath && (!options.require_sunlit || lit);
-                row.vn = std::stod(parts[14]);
+                row.off_nadir = std::stod(parts[7]);
+                row.alpha     = std::stod(parts[10]);
+                row.in_swath  = std::stod(parts[11]) > 0.5;
+                row.lit       = std::stod(parts[12]) > 0.5;
+                row.vn        = std::stod(parts[14]);
                 rows.push_back(row);
             } catch (...) { continue; }
         }
@@ -143,8 +229,13 @@ std::vector<AccessWindow> merge_optical_windows(
     std::vector<AccessWindow> windows;
     AccessWindow*             active = nullptr;
     for (const auto& row : rows) {
-        const bool visible = row.geom_visible && !in_umbra(row.utc, eclipses) &&
-                             !in_umbra(row.end_utc, eclipses);
+        const bool ok_lit = !options.require_sunlit || row.lit;
+        bool       ok_ecl = true;
+        if (apply_eclipse) {
+            ok_ecl = !blocked_by_eclipse(row.utc, eclipses, options) &&
+                     !blocked_by_eclipse(row.end_utc, eclipses, options);
+        }
+        const bool visible = row.in_swath && ok_lit && ok_ecl;
         if (visible) {
             if (!active) {
                 windows.push_back({});
@@ -183,7 +274,9 @@ std::vector<AccessWindow> merge_optical_windows(
             std::chrono::duration<double>(end - start).count();
     }
 
-    return clip_windows_to_working_time(windows, options.working_time_sec);
+    result.windows =
+        clip_windows_to_working_time(windows, options.working_time_sec);
+    return result;
 }
 
 std::vector<AccessWindow> clip_windows_to_working_time(
@@ -213,7 +306,7 @@ std::vector<AccessWindow> clip_windows_to_working_time(
         const auto clip_hi   = t0 + half_ms;
         const auto new_start = std::max(start, clip_lo);
         const auto new_end   = std::min(end, clip_hi);
-        if (new_end <= new_start) { continue; }  // empty after clip — drop
+        if (new_end <= new_start) { continue; }
         w.start_utc = format_utc(new_start);
         w.end_utc   = format_utc(new_end);
         w.duration_sec =
