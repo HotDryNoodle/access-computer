@@ -32,14 +32,17 @@
           "duration_sec": { "type": "number" },
           "t0_utc": {
             "type": "string",
-            "description": "Optical center projection time under side-roll-only assumption"
+            "description": "Epoch at t0. Optical RSA: coarse min-off-nadir sample (step_sec). Planned SAR RSA (AC-010): coarse min-|range_rate| seed (step_sec), not the execution epoch. Optical AE is refined to 1 ms (AC-008); planned SAR AE refinement belongs to AC-024."
           },
           "phi_deg": {
             "type": "number",
-            "description": "Fixed side-roll angle Phi at t0"
+            "description": "Angle at t0 (deg). Optical RSA: historical unsigned off-nadir proxy (not roll). Planned SAR RSA may use it only as a coarse unsigned roll diagnostic, not final attitude. Optical AE attitude.phi_deg is signed roll (AC-008); the full SAR AE attitude contract belongs to AC-024."
           },
           "pass_type": { "type": "string" },
-          "min_off_nadir_deg": { "type": "number" },
+          "min_off_nadir_deg": {
+            "type": "number",
+            "description": "Minimum unsigned off-nadir (deg) from the current coarse merger; optical/compatibility diagnostic. It is not the SAR ground-incidence-angle constraint."
+          },
           "max_sun_elevation_deg": { "type": "number" },
           "max_elevation_deg": {
             "type": "number",
@@ -59,7 +62,7 @@
     },
     "attitude": {
       "type": "object",
-      "description": "Present for attitude_estimation when an access window exists",
+      "description": "Present for attitude_estimation when an access window exists. The current contract represents optical AE (AC-008). SAR AE (AC-024) must extend it with an unambiguous full-attitude representation and Doppler/range-rate residual; this roll/pitch-only block must not be interpreted as complete SAR attitude.",
       "properties": {
         "mode": { "type": "string", "enum": ["side_roll_only", "stare"] },
         "t0_utc": { "type": "string" },

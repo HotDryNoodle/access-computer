@@ -6,7 +6,7 @@ GMAT-based **Access windows compute** CLI plugin (`access.remote_sensing_access`
 
 > **Migration**: Renamed from `mission-planer` (v0.1.0) to clarify semantics. The old repository is deprecated.
 
-This repository contains **access-window compute logic only** — three GMAT-backed compute scenarios.
+This repository contains three GMAT-backed compute scenarios. Remote sensing follows a two-stage chain: RSA predicts long-horizon candidate windows, then AE refines the selected short window into an execution epoch and attitude.
 
 ## Build
 
@@ -28,18 +28,20 @@ Depends on **satellite-plugin-sdk** via Meson wrap (`subprojects/satellite-plugi
 
 | Scenario | Horizon | Step | Sensor | Key outputs |
 |----------|---------|------|--------|-------------|
-| `remote_sensing_access` | 2 days (`172800 s`) | `10 s` | optical linescan / area array | access windows, `t0_utc`, `phi_deg` |
-| `attitude_estimation` | 5-30 min (`300-1800 s`) | `1 s` | optical area array (`stare`) | `attitude.t0_utc`, `attitude.phi_deg` |
+| `remote_sensing_access` | 2 days (`172800 s`) | `10 s` | optical implemented; SAR planned (AC-010) | long-horizon candidate windows and coarse `t0_utc` seed |
+| `attitude_estimation` | 5-30 min (`300-1800 s`) | `1 s` | optical implemented; SAR planned (AC-024) | precise execution `t0_utc` and attitude |
 | `downlink_window` | 1-2 h (`3600-7200 s`) | `5 s` | `downlink_cone` (optional) | `[start_utc, end_utc, max_elevation_deg]` |
 
 ### Sensor support matrix (v0.1.0)
 
 | Sensor | Access windows | Attitude | Notes |
 |--------|----------------|----------|-------|
-| `optical_linescan` + `side_roll_only` | supported | supported | Matches GMAT `Ex_OpticalSSO_Access` geometry |
-| `optical_area_array` + `stare` | supported | supported | AE `pitch_deg` computed (AC-008); RSA windows unchanged |
-| `sar` | not implemented | not implemented | rejected unless `experimental.allow_sar=true` |
+| `optical_linescan` + `side_roll_only` | supported | supported | Off-nadir cone geometry (intent-aligned with GMAT `Ex_OpticalSSO_Access`; no in-repo example script). RSA `phi_deg` = unsigned off-nadir **proxy** (≠ roll). See [`ac-009-rsa-algorithm.md`](../../docs/architecture/ac-009-rsa-algorithm.md). |
+| `optical_area_array` + `stare` | supported | supported | AE `pitch_deg` / signed roll via AC-008; RSA window `phi` still off-nadir proxy |
+| `sar` | not implemented (AC-010) | not implemented (AC-024) | RSA will use incidence-angle range + look side + LOS + mechanical roll and a coarse min-`|range_rate|` seed. AE will solve zero Doppler at 1 ms and output a full executable attitude. `experimental.allow_sar=true` does not make the current optical path SAR-capable. |
 | `downlink_cone` | n/a | n/a | Downlink only; `cone_angle_deg` default `80` → min elev `10°` |
+
+**Algorithm SSOT**：[`docs/architecture/ac-009-rsa-algorithm.md`](../../docs/architecture/ac-009-rsa-algorithm.md)（光学/SAR 的 RSA 长期规划 + AE 临期精化，以及两类传感器的几何差异）。
 
 ## CLI usage
 
