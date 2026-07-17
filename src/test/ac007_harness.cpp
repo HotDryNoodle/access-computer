@@ -76,6 +76,7 @@ nlohmann::json base_dl() {
 }  // namespace
 
 int main() {
+    setenv("ACCESS_COMPUTER_DEV_SOURCE_ROOT", ACCESS_COMPUTER_SOURCE_ROOT, 1);
     using mp::parse_contact_windows;
     using mp::render_downlink_script;
     using mp::validate_request;

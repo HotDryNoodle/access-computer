@@ -1,0 +1,52 @@
+{
+  "request_id": "req_sar_ae_001",
+  "task": {
+    "scenario": "attitude_estimation",
+    "start_time_utc": "2026-12-30T03:37:00Z",
+    "compute_horizon_sec": 900,
+    "working_time_sec": 120,
+    "step_sec": 1
+  },
+  "selected_window": {
+    "start_utc": "2026-12-30T03:38:10.000Z",
+    "end_utc": "2026-12-30T03:41:30.000Z",
+    "t0_utc": "2026-12-30T03:39:50.000Z",
+    "node_id": "local"
+  },
+  "spacecraft": {
+    "sat_id": "sat_A",
+    "epoch_utc": "30 Dec 2026 00:00:00.000",
+    "state_type": "keplerian",
+    "elements": {
+      "sma_km": 6716.14,
+      "ecc": 0.0,
+      "inc_deg": 96.806,
+      "raan_deg": 76.515,
+      "aop_deg": 0.0,
+      "ta_deg": 0.0
+    },
+    "propagation_profile": "sso_j2_default"
+  },
+  "target": {
+    "type": "ground_point",
+    "lon_deg": 114.3055,
+    "lat_deg": 30.5928,
+    "alt_km": 0.057
+  },
+  "sensor": {
+    "type": "sar",
+    "mode": "stripmap",
+    "center_frequency_hz": 5405000000.0,
+    "azimuth_beamwidth_deg": 10.0
+  },
+  "constraints": {
+    "incidence_min_deg": 20.0,
+    "incidence_max_deg": 80.0,
+    "allowed_look_side": "either",
+    "roll_max_deg": 70.0,
+    "max_abs_range_rate_mps": 0.1
+  },
+  "gmat": {
+    "install_root": "/home/hotdry/projects/GMAT-R2026a/GMAT-R2026a-Linux-x64"
+  }
+}

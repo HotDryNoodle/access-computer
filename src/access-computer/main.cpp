@@ -216,6 +216,14 @@ int main(int argc, char** argv) {
         std::cerr << "Unknown command: " << opts.command << '\n';
         print_global_usage();
         return satellite::EXIT_USAGE;
+    } catch (const mp::ValidationError& ex) {
+        satellite::write_json_stdout({{"ok", false}, {"error", ex.what()}},
+                                     false);
+        return satellite::EXIT_VALIDATION;
+    } catch (const nlohmann::json::exception& ex) {
+        satellite::write_json_stdout({{"ok", false}, {"error", ex.what()}},
+                                     false);
+        return satellite::EXIT_VALIDATION;
     } catch (const std::exception& ex) {
         satellite::write_json_stdout(
             {
@@ -226,10 +234,6 @@ int main(int argc, char** argv) {
         const std::string msg = ex.what();
         if (msg.find("not found") != std::string::npos) {
             return satellite::EXIT_DEPENDENCY;
-        }
-        if (msg.find("validation") != std::string::npos ||
-            msg.find("Missing") != std::string::npos) {
-            return satellite::EXIT_VALIDATION;
         }
         return satellite::EXIT_RETRYABLE;
     }

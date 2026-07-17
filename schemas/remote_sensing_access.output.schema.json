@@ -18,9 +18,11 @@
     "summary": {
       "type": "object",
       "properties": {
-        "window_count": { "type": "integer" },
-        "duration_total_sec": { "type": "number" }
-      }
+        "window_count": { "type": "integer", "minimum": 0 },
+        "duration_total_sec": { "type": "number", "minimum": 0 }
+      },
+      "required": ["window_count", "duration_total_sec"],
+      "additionalProperties": false
     },
     "windows": {
       "type": "array",
@@ -32,11 +34,11 @@
           "duration_sec": { "type": "number" },
           "t0_utc": {
             "type": "string",
-            "description": "Epoch at t0. Optical RSA: coarse min-off-nadir sample (step_sec). Planned SAR RSA (AC-010): coarse min-|range_rate| seed (step_sec), not the execution epoch. Optical AE is refined to 1 ms (AC-008); planned SAR AE refinement belongs to AC-024."
+            "description": "Epoch at t0. Optical RSA: coarse min-off-nadir sample (step_sec). SAR RSA: coarse min-|range_rate| seed (step_sec), not the execution epoch. Optical AE and SAR AE are refined to 1 ms; SAR AE uses zero range rate and recomputes the full attitude."
           },
           "phi_deg": {
             "type": "number",
-            "description": "Angle at t0 (deg). Optical RSA: historical unsigned off-nadir proxy (not roll). Planned SAR RSA may use it only as a coarse unsigned roll diagnostic, not final attitude. Optical AE attitude.phi_deg is signed roll (AC-008); the full SAR AE attitude contract belongs to AC-024."
+            "description": "Angle at t0 (deg). Optical RSA: historical unsigned off-nadir proxy. SAR RSA/AE: absolute mechanical body-to-LVLH roll at the coarse/refined epoch. Optical AE attitude.phi_deg remains signed roll."
           },
           "pass_type": { "type": "string" },
           "min_off_nadir_deg": {
@@ -51,6 +53,25 @@
           "node_id": {
             "type": "string",
             "description": "Node that produced this window (SATELLITE_NODE_ID or local)"
+          },
+          "sar_geometry": {
+            "type": "object",
+            "description": "SAR geometry at t0; coarse for RSA and recomputed at the exact millisecond for AE",
+            "properties": {
+              "incidence_angle_deg": { "type": "number" },
+              "look_side": { "type": "string", "enum": ["left", "right"] },
+              "side_look_angle_deg": { "type": "number", "description": "Signed LOS projection angle atan2(u.C,u.D); not mechanical roll" },
+              "squint_deg": { "type": "number", "description": "Actual asin(u.normalize(v_s-v_t)) at t0" },
+              "roll_deg": { "type": "number", "description": "Mechanical roll from zero-squint body-to-LVLH ZYX decomposition" },
+              "pitch_deg": { "type": "number" },
+              "yaw_deg": { "type": "number" },
+              "slant_range_km": { "type": "number" },
+              "range_rate_mps": { "type": "number" },
+              "doppler_centroid_hz": { "type": "number" },
+              "los_clear": { "type": "boolean" }
+            },
+            "required": ["incidence_angle_deg", "look_side", "side_look_angle_deg", "squint_deg", "roll_deg", "pitch_deg", "yaw_deg", "slant_range_km", "range_rate_mps", "doppler_centroid_hz", "los_clear"],
+            "additionalProperties": false
           }
         },
         "required": ["start_utc", "end_utc", "node_id"]
@@ -62,9 +83,14 @@
     },
     "attitude": {
       "type": "object",
-      "description": "Present for attitude_estimation when an access window exists. The current contract represents optical AE (AC-008). SAR AE (AC-024) must extend it with an unambiguous full-attitude representation and Doppler/range-rate residual; this roll/pitch-only block must not be interpreted as complete SAR attitude.",
+      "description": "Present for attitude_estimation when a feasible window exists. Optical AE uses phi/pitch (AC-008); SAR AE uses a body-to-EarthMJ2000Eq quaternion plus derived Euler angles and Doppler/range-rate residual (AC-024).",
       "properties": {
-        "mode": { "type": "string", "enum": ["side_roll_only", "stare"] },
+        "mode": { "type": "string", "enum": ["side_roll_only", "stare", "stripmap"] },
+        "attitude_status": {
+          "type": "string",
+          "enum": ["computed"],
+          "description": "SAR AE emits computed only"
+        },
         "t0_utc": { "type": "string" },
         "phi_deg": { "type": "number" },
         "pitch_deg": {
@@ -75,10 +101,172 @@
           "type": "string",
           "enum": ["placeholder", "computed"],
           "description": "New runs emit computed only; placeholder retained for historical result compatibility"
+        },
+        "reference_frame": {
+          "type": "string",
+          "enum": ["EarthMJ2000Eq"]
+        },
+        "quaternion_body_to_reference": {
+          "type": "object",
+          "properties": {
+            "order": { "const": "wxyz" },
+            "values": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          },
+          "required": ["order", "values"],
+          "additionalProperties": false
+        },
+        "roll_deg": { "type": "number", "description": "SAR: mechanical body-to-LVLH roll at the exact millisecond" },
+        "yaw_deg": { "type": "number" },
+        "squint_deg": { "type": "number", "description": "Actual squint recomputed at the exact millisecond; not a fixed zero placeholder" },
+        "incidence_angle_deg": { "type": "number" },
+        "look_side": { "type": "string", "enum": ["left", "right"] },
+        "side_look_angle_deg": { "type": "number", "description": "Signed LOS projection angle; distinct from mechanical roll" },
+        "slant_range_km": { "type": "number" },
+        "range_rate_mps": { "type": "number" },
+        "doppler_centroid_hz": { "type": "number" }
+      },
+      "required": ["mode", "t0_utc"],
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "script_path": { "type": "string" },
+        "console_log": { "type": "string" },
+        "trace_path": { "type": "string" },
+        "eclipse_path": { "type": "string" },
+        "ephemeris_path": { "type": "string" },
+        "sar_state_path": { "type": "string" },
+        "contact_path": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "attitude": {
+            "properties": { "mode": { "const": "stripmap" } },
+            "required": ["mode"]
+          }
+        },
+        "required": ["attitude"]
+      },
+      "then": {
+        "properties": {
+          "attitude": {
+            "required": [
+              "mode",
+              "attitude_status",
+              "t0_utc",
+              "reference_frame",
+              "quaternion_body_to_reference",
+              "roll_deg",
+              "pitch_deg",
+              "yaw_deg",
+              "squint_deg",
+              "incidence_angle_deg",
+              "look_side",
+              "side_look_angle_deg",
+              "slant_range_km",
+              "range_rate_mps",
+              "doppler_centroid_hz"
+            ]
+          }
         }
       }
     },
-    "artifacts": { "type": "object" },
-    "warnings": { "type": "array", "items": { "type": "string" } }
-  }
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "succeeded" },
+          "scenario": { "const": "attitude_estimation" },
+          "attitude": {
+            "properties": { "mode": { "const": "stripmap" } },
+            "required": ["mode"]
+          }
+        },
+        "required": ["status", "scenario", "attitude"]
+      },
+      "then": {
+        "properties": {
+          "windows": {
+            "items": {
+              "required": [
+                "start_utc",
+                "end_utc",
+                "duration_sec",
+                "t0_utc",
+                "phi_deg",
+                "node_id",
+                "sar_geometry"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "no_result" } },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["windows", "summary", "artifacts", "warnings"],
+        "properties": {
+          "windows": { "maxItems": 0 },
+          "summary": {
+            "properties": {
+              "window_count": { "const": 0 },
+              "duration_total_sec": { "const": 0 }
+            }
+          },
+          "attitude": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "succeeded" } },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["windows", "summary", "artifacts", "warnings"],
+        "properties": {
+          "windows": { "minItems": 1 },
+          "summary": {
+            "properties": { "window_count": { "minimum": 1 } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "succeeded" },
+          "scenario": { "const": "attitude_estimation" }
+        },
+        "required": ["status", "scenario"]
+      },
+      "then": { "required": ["attitude"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "succeeded" },
+          "scenario": { "enum": ["remote_sensing_access", "downlink_window"] }
+        },
+        "required": ["status", "scenario"]
+      },
+      "then": { "properties": { "attitude": false } }
+    }
+  ],
+  "additionalProperties": true
 }

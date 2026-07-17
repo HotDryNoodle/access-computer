@@ -6,6 +6,7 @@
 #include <string>
 
 #include "geometry/attitude_solver.hpp"
+#include "geometry/sar_attitude_solver.hpp"
 
 /**
  * @file run_planner.hpp
@@ -49,6 +50,16 @@ nlohmann::json run_planner(const nlohmann::json& request,
 void apply_attitude_estimation_result(nlohmann::json&             output,
                                       const AttitudeRefineResult& refined,
                                       const std::string&          mode);
+
+/**
+ * @brief 将 SAR AE 精化结果写入 run 输出。
+ * @param output 已含 artifacts/warnings 的输出对象。
+ * @param refined SAR 零多普勒精化结果。
+ * @note 失败时严格写 @c no_result、空 windows、零 summary、无 attitude；
+ *       成功时窗口与姿态均来自同一毫秒时刻。
+ */
+void apply_sar_attitude_result(nlohmann::json&                output,
+                               const SarAttitudeRefineResult& refined);
 
 /**
  * @brief 将 run 输出 status 映射为 CLI 退出码（与 main 一致）。

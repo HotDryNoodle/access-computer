@@ -1,6 +1,7 @@
 #include "planner/run_planner.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
@@ -9,9 +10,12 @@
 #include <sstream>
 
 #include "geometry/attitude_solver.hpp"
+#include "geometry/sar_attitude_solver.hpp"
+#include "geometry/sar_geometry.hpp"
 #include "geometry/window_merger.hpp"
 #include "gmat/gmat_backend.hpp"
 #include "planner/contact_windows.hpp"
+#include "planner/time_model.hpp"
 #include "planner/validate.hpp"
 #include "satellite/exit_codes.hpp"
 #include "satellite/json_io.hpp"
@@ -86,6 +90,30 @@ void apply_attitude_estimation_result(nlohmann::json&             output,
     };
 }
 
+void apply_sar_attitude_result(nlohmann::json&                output,
+                               const SarAttitudeRefineResult& refined) {
+    for (const auto& warning : refined.warnings) {
+        output["warnings"].push_back(warning);
+    }
+    if (!refined.ok) {
+        output["status"]  = "no_result";
+        output["windows"] = nlohmann::json::array();
+        output["summary"] = {{"window_count", 0}, {"duration_total_sec", 0.0}};
+        output.erase("attitude");
+        return;
+    }
+
+    output["windows"]               = sar_windows_to_json({refined.window});
+    output["windows"][0]["phi_deg"] = std::fabs(refined.attitude.roll_deg);
+    output["summary"]               = {
+        {"window_count", 1},
+        {"duration_total_sec", refined.window.duration_sec},
+    };
+    const auto t0_utc = output["windows"][0].at("t0_utc").get<std::string>();
+    output["attitude"] =
+        sar_attitude_to_json(t0_utc, refined.attitude, refined.window.geometry);
+}
+
 int run_status_exit_code(const nlohmann::json& output) {
     if (output.value("status", "") == "no_result") {
         return satellite::EXIT_NO_RESULT;
@@ -152,10 +180,13 @@ nlohmann::json make_manifest() {
 nlohmann::json run_planner(const nlohmann::json& request,
                            const RunContext&     ctx) {
     const auto validation = validate_request(request);
-    if (!validation.ok) { throw std::runtime_error(validation.message); }
+    if (!validation.ok) { throw ValidationError(validation.message); }
 
     const auto scenario = request.at("task").at("scenario").get<std::string>();
-    const auto task_id  = ctx.task_id.empty() ? make_task_id() : ctx.task_id;
+    const bool is_sar   = request.contains("sensor") &&
+                        request.at("sensor").is_object() &&
+                        request.at("sensor").value("type", "") == "sar";
+    const auto task_id    = ctx.task_id.empty() ? make_task_id() : ctx.task_id;
     const auto request_id = request.contains("request_id")
                                 ? request.at("request_id").get<std::string>()
                                 : task_id;
@@ -181,6 +212,9 @@ nlohmann::json run_planner(const nlohmann::json& request,
     std::string script_text;
     if (scenario == "downlink_window") {
         script_text = render_downlink_script(request, ctx.work_dir);
+    }
+    else if (is_sar) {
+        script_text = render_sar_access_script(request, ctx.work_dir);
     }
     else { script_text = render_optical_access_script(request, ctx.work_dir); }
 
@@ -226,6 +260,103 @@ nlohmann::json run_planner(const nlohmann::json& request,
         output["artifacts"]["contact_path"] =
             std::filesystem::absolute(contact_path).string();
         if (windows.empty()) { output["status"] = "no_result"; }
+        if (ctx.trace_id) { output["trace_id"] = *ctx.trace_id; }
+        write_json_file(ctx.work_dir / "result.json", output, true);
+        return output;
+    }
+
+    if (is_sar && scenario == "remote_sensing_access") {
+        const auto illumination = resolve_optical_illumination(request);
+        for (const auto& warning : illumination.warnings) {
+            output["warnings"].push_back(warning);
+        }
+        const auto&     constraints = request.at("constraints");
+        const auto&     sensor      = request.at("sensor");
+        SarMergeOptions options;
+        options.step_sec = request.at("task").at("step_sec").get<double>();
+        options.working_time_sec =
+            request.at("task").at("working_time_sec").get<double>();
+        options.incidence_min_deg =
+            constraints.at("incidence_min_deg").get<double>();
+        options.incidence_max_deg =
+            constraints.at("incidence_max_deg").get<double>();
+        options.allowed_look_side =
+            constraints.at("allowed_look_side").get<std::string>();
+        options.roll_max_deg = constraints.at("roll_max_deg").get<double>();
+        options.center_frequency_hz =
+            sensor.at("center_frequency_hz").get<double>();
+        options.azimuth_beamwidth_deg =
+            sensor.at("azimuth_beamwidth_deg").get<double>();
+        options.max_abs_squint_deg = constraints.value(
+            "max_abs_squint_deg", options.azimuth_beamwidth_deg / 2.0);
+        options.expected_start = *parse_iso8601_utc(
+            request.at("task").at("start_time_utc").get<std::string>());
+        options.expected_end =
+            *options.expected_start +
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                std::chrono::duration<double>(request.at("task")
+                                                  .at("compute_horizon_sec")
+                                                  .get<double>()));
+
+        const auto merged =
+            merge_sar_windows(gmat_result.sar_state_path, options);
+        double total_sec = 0.0;
+        for (const auto& window : merged.windows) {
+            total_sec += window.duration_sec;
+        }
+        output["windows"] = sar_windows_to_json(merged.windows);
+        output["summary"] = {
+            {"window_count", merged.windows.size()},
+            {"duration_total_sec", total_sec},
+        };
+        output["artifacts"]["sar_state_path"] =
+            gmat_result.sar_state_path.string();
+        if (merged.windows.empty()) { output["status"] = "no_result"; }
+        if (ctx.trace_id) { output["trace_id"] = *ctx.trace_id; }
+        write_json_file(ctx.work_dir / "result.json", output, true);
+        return output;
+    }
+
+    if (is_sar && scenario == "attitude_estimation") {
+        const auto illumination = resolve_optical_illumination(request);
+        for (const auto& warning : illumination.warnings) {
+            output["warnings"].push_back(warning);
+        }
+        const auto&        constraints = request.at("constraints");
+        const auto&        sensor      = request.at("sensor");
+        SarAttitudeOptions options;
+        options.step_sec = request.at("task").at("step_sec").get<double>();
+        options.working_time_sec =
+            request.at("task").at("working_time_sec").get<double>();
+        options.incidence_min_deg =
+            constraints.at("incidence_min_deg").get<double>();
+        options.incidence_max_deg =
+            constraints.at("incidence_max_deg").get<double>();
+        options.allowed_look_side =
+            constraints.at("allowed_look_side").get<std::string>();
+        options.roll_max_deg = constraints.at("roll_max_deg").get<double>();
+        options.center_frequency_hz =
+            sensor.at("center_frequency_hz").get<double>();
+        options.azimuth_beamwidth_deg =
+            sensor.at("azimuth_beamwidth_deg").get<double>();
+        options.max_abs_squint_deg = constraints.value(
+            "max_abs_squint_deg", options.azimuth_beamwidth_deg / 2.0);
+        options.max_abs_range_rate_mps =
+            constraints.value("max_abs_range_rate_mps", 0.1);
+        options.expected_start = *parse_iso8601_utc(
+            request.at("task").at("start_time_utc").get<std::string>());
+        options.expected_end =
+            *options.expected_start +
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                std::chrono::duration<double>(request.at("task")
+                                                  .at("compute_horizon_sec")
+                                                  .get<double>()));
+
+        const auto refined = refine_sar_attitude(
+            gmat_result.sar_state_path, request.at("selected_window"), options);
+        output["artifacts"]["sar_state_path"] =
+            gmat_result.sar_state_path.string();
+        apply_sar_attitude_result(output, refined);
         if (ctx.trace_id) { output["trace_id"] = *ctx.trace_id; }
         write_json_file(ctx.work_dir / "result.json", output, true);
         return output;

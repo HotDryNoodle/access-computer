@@ -24,11 +24,12 @@ planner_lib = static_library(
     'src/planner/run_planner.cpp',
     'src/geometry/window_merger.cpp',
     'src/geometry/attitude_solver.cpp',
+    'src/geometry/sar_geometry.cpp',
+    'src/geometry/sar_attitude_solver.cpp',
     'src/gmat/gmat_backend.cpp',
   ),
   include_directories: common_inc,
   dependencies: [satellite_common_dep, json_dep],
-  cpp_args: ['-DACCESS_COMPUTER_SOURCE_ROOT="@0@"'.format(meson.current_source_dir())],
 )
 
 executable(
@@ -55,6 +56,7 @@ executable(
   include_directories: common_inc,
   link_with: planner_lib,
   dependencies: [satellite_common_dep, json_dep],
+  cpp_args: ['-DACCESS_COMPUTER_SOURCE_ROOT="@0@"'.format(meson.current_source_dir())],
   install: false,
 )
 
@@ -73,6 +75,7 @@ executable(
   include_directories: common_inc,
   link_with: planner_lib,
   dependencies: [satellite_common_dep, json_dep],
+  cpp_args: ['-DACCESS_COMPUTER_SOURCE_ROOT="@0@"'.format(meson.current_source_dir())],
   install: false,
 )
 
@@ -86,6 +89,25 @@ executable(
   install: false,
 )
 
+executable(
+  'ac010-harness',
+  'src/test/ac010_harness.cpp',
+  include_directories: common_inc,
+  link_with: planner_lib,
+  dependencies: [satellite_common_dep, json_dep],
+  cpp_args: ['-DACCESS_COMPUTER_SOURCE_ROOT="@0@"'.format(meson.current_source_dir())],
+  install: false,
+)
+
+executable(
+  'ac024-harness',
+  'src/test/ac024_harness.cpp',
+  include_directories: common_inc,
+  link_with: planner_lib,
+  dependencies: [satellite_common_dep, json_dep],
+  install: false,
+)
+
 install_data(
   'schemas/remote_sensing_access.input.schema.json',
   'schemas/remote_sensing_access.output.schema.json',
@@ -95,6 +117,7 @@ install_data(
 install_data(
   'templates/optical_access.script.in',
   'templates/downlink_contact.script.in',
+  'templates/sar_access.script.in',
   install_dir: get_option('datadir') / 'access-computer/templates',
 )
 
@@ -106,6 +129,8 @@ install_data(
 install_data(
   'samples/remote_sensing_access.json',
   'samples/attitude_estimation.json',
+  'samples/sar_rsa.json',
+  'samples/sar_attitude_estimation.json',
   'samples/downlink_window.json',
   'samples/short_access.json',
   install_dir: get_option('datadir') / 'access-computer/samples',

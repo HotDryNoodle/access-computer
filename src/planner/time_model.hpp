@@ -39,4 +39,12 @@ std::optional<double> delta_prop_sec(const std::string& start_time_utc,
 std::string format_gmat_utcgregorian(
     const std::chrono::system_clock::time_point& tp);
 
+/**
+ * @brief 将 time_point 格式化为规范 ISO-8601 UTC，固定毫秒三位。
+ * @param tp UTC 时间点。
+ * @return 例如 @c 2026-12-30T03:39:59.668Z。
+ */
+std::string format_iso8601_utc_ms(
+    const std::chrono::system_clock::time_point& tp);
+
 }  // namespace mp

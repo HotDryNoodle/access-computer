@@ -125,4 +125,27 @@ std::string format_gmat_utcgregorian(
     return ss.str();
 }
 
+std::string format_iso8601_utc_ms(
+    const std::chrono::system_clock::time_point& tp) {
+    const auto sec_tp = std::chrono::time_point_cast<std::chrono::seconds>(tp);
+    auto       tt     = std::chrono::system_clock::to_time_t(sec_tp);
+    auto       whole  = std::chrono::system_clock::from_time_t(tt);
+    auto       millis = static_cast<long long>(std::llround(
+        std::chrono::duration<double>(tp - whole).count() * 1000.0));
+    if (millis >= 1000) {
+        ++tt;
+        millis = 0;
+    }
+    if (millis < 0) {
+        --tt;
+        millis += 1000;
+    }
+    std::tm tm{};
+    gmtime_r(&tt, &tm);
+    std::ostringstream ss;
+    ss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%S") << '.' << std::setw(3)
+       << std::setfill('0') << millis << 'Z';
+    return ss.str();
+}
+
 }  // namespace mp

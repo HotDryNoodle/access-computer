@@ -30,6 +30,7 @@ struct GmatRunResult {
     std::filesystem::path trace_path;
     std::filesystem::path eclipse_path;
     std::filesystem::path ephemeris_csv;
+    std::filesystem::path sar_state_path;
     std::string           stdout_text;
     std::string           stderr_text;
 };
@@ -41,15 +42,43 @@ struct GmatRunResult {
  */
 GmatPaths resolve_gmat_paths(const nlohmann::json& request);
 
-/** @brief 渲染光学访问 GMAT 脚本。 */
+/**
+ * @brief 渲染光学访问 GMAT 脚本。
+ * @param request 已校验的光学请求。
+ * @param work_dir GMAT 报告输出目录。
+ * @return 完整 GMAT 脚本文本。
+ */
 std::string render_optical_access_script(const nlohmann::json&        request,
                                          const std::filesystem::path& work_dir);
 
-/** @brief 渲染下行窗口 GMAT 脚本。 */
+/**
+ * @brief 渲染下行窗口 GMAT 脚本。
+ * @param request 已校验的下行请求。
+ * @param work_dir GMAT 报告输出目录。
+ * @return 完整 GMAT 脚本文本。
+ */
 std::string render_downlink_script(const nlohmann::json&        request,
                                    const std::filesystem::path& work_dir);
 
-/** @brief 调用 GMAT 控制台执行脚本。 */
+/**
+ * @brief 渲染 SAR RSA/AE 共用状态报告脚本。
+ * @param request 已校验的 SAR 请求。
+ * @param work_dir GMAT 报告输出目录。
+ * @return 完整 GMAT 脚本文本。
+ * @note 报告坐标系为 EarthMJ2000Eq；位置 km、速度 km/s；时间为
+ *       UTCGregorian。目标与法线辅助点使用 WGS-84 椭球地平基准；首末节点
+ *       精确覆盖任务区间，末节点由绝对 A1ModJulian 停止历元生成。
+ */
+std::string render_sar_access_script(const nlohmann::json&        request,
+                                     const std::filesystem::path& work_dir);
+
+/**
+ * @brief 调用 GMAT 控制台执行脚本。
+ * @param paths GMAT 安装根与控制台路径。
+ * @param script_path 已渲染脚本路径。
+ * @param work_dir 本次运行的产物目录。
+ * @return 控制台退出码、日志与场景报告路径。
+ */
 GmatRunResult run_gmat_console(const GmatPaths&             paths,
                                const std::filesystem::path& script_path,
                                const std::filesystem::path& work_dir);

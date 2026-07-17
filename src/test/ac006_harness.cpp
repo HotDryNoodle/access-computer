@@ -4,6 +4,7 @@
  */
 
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -103,6 +104,7 @@ nlohmann::json base_rsa() {
 }  // namespace
 
 int main() {
+    setenv("ACCESS_COMPUTER_DEV_SOURCE_ROOT", ACCESS_COMPUTER_SOURCE_ROOT, 1);
     using mp::kEclipseFilterUnavailableWarning;
     using mp::merge_optical_windows;
     using mp::validate_request;
@@ -332,13 +334,17 @@ int main() {
                "V2 DL ignored warning exact");
 
         auto sar            = base_rsa();
-        sar["sensor"]       = {{"type", "sar"}};
+        sar["sensor"]       = {{"type", "sar"},
+                               {"mode", "stripmap"},
+                               {"center_frequency_hz", 5.405e9},
+                               {"azimuth_beamwidth_deg", 10.0}};
         sar["experimental"] = {{"allow_sar", true}};
-        sar["constraints"]  = {{"roll_max_deg", 30.0},
-                               {"require_sunlit", true},
-                               {"exclude_umbra", true},
-                               {"exclude_penumbra", true}};
-        const auto v_sar    = validate_request(sar);
+        sar["constraints"]  = {
+            {"incidence_min_deg", 20.0},     {"incidence_max_deg", 80.0},
+            {"allowed_look_side", "either"}, {"roll_max_deg", 70.0},
+            {"require_sunlit", true},        {"exclude_umbra", true},
+            {"exclude_penumbra", true}};
+        const auto v_sar = validate_request(sar);
         expect(v_sar.ok, "V2 SAR validate ok");
         expect(v_sar.details.contains("warnings") &&
                    v_sar.details["warnings"].is_array() &&

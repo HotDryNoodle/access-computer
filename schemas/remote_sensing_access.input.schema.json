@@ -12,7 +12,7 @@
       "properties": {
         "allow_sar": {
           "type": "boolean",
-          "description": "Reserved for SAR contract testing only; SAR planning is not implemented in v0.1.0"
+          "description": "Deprecated compatibility field; ignored by AC-010/024 SAR implementations"
         }
       },
       "additionalProperties": false
@@ -50,6 +50,41 @@
           "description": "Detection working window W; final access is [t0-W/2, t0+W/2] for RSA/AE (not applied to downlink)"
         },
         "step_sec": { "type": "number", "minimum": 0.1 }
+      },
+      "additionalProperties": false
+    },
+    "selected_window": {
+      "type": "object",
+      "description": "Task-manager-selected AC-010 SAR RSA window; required for SAR attitude_estimation",
+      "required": ["start_utc", "end_utc", "t0_utc"],
+      "properties": {
+        "start_utc": { "type": "string", "description": "Canonical ISO-8601 UTC window start" },
+        "end_utc": { "type": "string", "description": "Canonical ISO-8601 UTC window end" },
+        "t0_utc": { "type": "string", "description": "AC-010 coarse min-|range_rate| seed" },
+        "duration_sec": { "type": "number", "minimum": 0 },
+        "phi_deg": { "type": "number" },
+        "pass_type": { "type": "string" },
+        "min_off_nadir_deg": { "type": "number" },
+        "max_sun_elevation_deg": { "type": "number" },
+        "max_elevation_deg": { "type": "number" },
+        "node_id": { "type": "string" },
+        "sar_geometry": {
+          "type": "object",
+          "properties": {
+            "incidence_angle_deg": { "type": "number" },
+            "look_side": { "type": "string", "enum": ["left", "right"] },
+            "side_look_angle_deg": { "type": "number", "description": "AC-010 LOS projection angle; not mechanical roll" },
+            "squint_deg": { "type": "number", "description": "AC-010 actual squint diagnostic" },
+            "roll_deg": { "type": "number", "description": "AC-010 mechanical roll diagnostic" },
+            "pitch_deg": { "type": "number" },
+            "yaw_deg": { "type": "number" },
+            "slant_range_km": { "type": "number" },
+            "range_rate_mps": { "type": "number" },
+            "doppler_centroid_hz": { "type": "number" },
+            "los_clear": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -99,15 +134,27 @@
           "type": "string",
           "enum": ["sar", "optical_linescan", "optical_area_array", "downlink_cone"]
         },
-        "mode": { "type": "string", "enum": ["side_roll_only", "stare"] }
-      }
+        "mode": { "type": "string", "enum": ["side_roll_only", "stare", "stripmap"] },
+        "center_frequency_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "SAR center frequency in Hz; required for sensor.type=sar"
+        },
+        "azimuth_beamwidth_deg": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 180,
+          "description": "SAR full azimuth beamwidth in degrees; required for sensor.type=sar"
+        }
+      },
+      "additionalProperties": false
     },
     "constraints": {
       "type": "object",
       "properties": {
         "roll_max_deg": {
           "type": "number",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "maximum": 90,
           "description": "Side-roll limit theta_max; default 30 deg for optical access"
         },
@@ -128,6 +175,34 @@
           "minimum": 0,
           "maximum": 90,
           "description": "Ground-station cone half-angle from zenith for downlink visibility; default 80 deg (MinimumElevationAngle = 90 - cone = 10 deg ESA baseline); explicit values remain supported"
+        },
+        "incidence_min_deg": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 90,
+          "description": "SAR minimum ground incidence angle in degrees; explicit, no generic default"
+        },
+        "incidence_max_deg": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 90,
+          "description": "SAR maximum ground incidence angle in degrees; must exceed incidence_min_deg"
+        },
+        "allowed_look_side": {
+          "type": "string",
+          "enum": ["left", "right", "either"],
+          "description": "Allowed SAR look side"
+        },
+        "max_abs_range_rate_mps": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 0.1,
+          "description": "SAR AE millisecond-quantized absolute range-rate residual gate in m/s"
+        },
+        "max_abs_squint_deg": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "SAR absolute squint gate in degrees; when omitted defaults to azimuth_beamwidth_deg/2 and may not exceed that half-width"
         }
       },
       "additionalProperties": false
@@ -140,5 +215,91 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "sensor": {
+            "properties": { "type": { "const": "sar" } },
+            "required": ["type"]
+          }
+        },
+        "required": ["sensor"]
+      },
+      "then": {
+        "properties": {
+          "sensor": {
+            "properties": { "mode": { "const": "stripmap" } },
+            "required": ["type", "mode", "center_frequency_hz", "azimuth_beamwidth_deg"]
+          },
+          "constraints": {
+            "required": ["incidence_min_deg", "incidence_max_deg", "allowed_look_side", "roll_max_deg"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "properties": { "scenario": { "const": "attitude_estimation" } },
+            "required": ["scenario"]
+          },
+          "sensor": {
+            "properties": { "type": { "const": "sar" } },
+            "required": ["type"]
+          }
+        },
+        "required": ["task", "sensor"]
+      },
+      "then": { "required": ["selected_window"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "properties": {
+              "scenario": { "enum": ["remote_sensing_access", "attitude_estimation"] }
+            },
+            "required": ["scenario"]
+          }
+        },
+        "required": ["task"]
+      },
+      "then": { "required": ["sensor"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "sensor": {
+            "properties": { "type": { "const": "optical_linescan" } },
+            "required": ["type"]
+          }
+        },
+        "required": ["sensor"]
+      },
+      "then": {
+        "properties": {
+          "sensor": { "properties": { "mode": { "const": "side_roll_only" } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sensor": {
+            "properties": { "type": { "const": "optical_area_array" } },
+            "required": ["type"]
+          }
+        },
+        "required": ["sensor"]
+      },
+      "then": {
+        "properties": {
+          "sensor": { "properties": { "mode": { "enum": ["stare", "side_roll_only"] } } }
+        }
+      }
+    }
+  ],
   "additionalProperties": false
 }

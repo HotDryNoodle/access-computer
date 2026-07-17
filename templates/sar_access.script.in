@@ -1,0 +1,90 @@
+%
+% access-computer SAR state template (J2-only, EarthMJ2000Eq)
+%
+
+Create Spacecraft Sat;
+
+Sat.DateFormat       = UTCGregorian;
+Sat.Epoch            = '{{EPOCH_UTC}}';
+Sat.CoordinateSystem = EarthMJ2000Eq;
+Sat.DisplayStateType = Keplerian;
+Sat.SMA              = {{SMA_KM}};
+Sat.ECC              = {{ECC}};
+Sat.INC              = {{INC_DEG}};
+Sat.RAAN             = {{RAAN_DEG}};
+Sat.AOP              = {{AOP_DEG}};
+Sat.TA               = {{TA_DEG}};
+Sat.NAIFId           = -99001;
+Sat.NAIFIdReferenceFrame = -99001001;
+
+Create GroundStation TargetA;
+
+TargetA.CentralBody = Earth;
+TargetA.StateType   = Spherical;
+TargetA.HorizonReference = Ellipsoid;
+TargetA.Location1   = {{TARGET_LAT}};
+TargetA.Location2   = {{TARGET_LON}};
+TargetA.Location3   = {{TARGET_ALT_KM}};
+
+Create GroundStation TargetNormalPoint;
+
+TargetNormalPoint.CentralBody = Earth;
+TargetNormalPoint.StateType   = Spherical;
+TargetNormalPoint.HorizonReference = Ellipsoid;
+TargetNormalPoint.Location1   = {{TARGET_LAT}};
+TargetNormalPoint.Location2   = {{TARGET_LON}};
+TargetNormalPoint.Location3   = {{TARGET_NORMAL_ALT_KM}};
+
+Create ForceModel FM;
+
+FM.CentralBody                      = Earth;
+FM.PrimaryBodies                    = {Earth};
+FM.PointMasses                      = {};
+FM.Drag                             = None;
+FM.SRP                              = Off;
+FM.GravityField.Earth.Degree        = 2;
+FM.GravityField.Earth.Order         = 0;
+FM.GravityField.Earth.PotentialFile = 'JGM2.cof';
+FM.GravityField.Earth.TideModel     = 'None';
+
+Create Propagator Prop;
+
+Prop.FM                       = FM;
+Prop.Type                     = RungeKutta89;
+Prop.InitialStepSize          = 30;
+Prop.Accuracy                 = 1e-11;
+Prop.MaxStep                  = 60;
+Prop.StopIfAccuracyIsViolated = true;
+
+Create ReportFile SarStateReport;
+
+SarStateReport.Filename     = '{{OUTPUT_DIR}}/sar_state_j2000.txt';
+SarStateReport.WriteHeaders = false;
+SarStateReport.Precision    = 16;
+SarStateReport.ColumnWidth  = 24;
+
+Create Variable stepSec stepIndex stopEpoch;
+
+BeginMissionSequence;
+
+If {{ELAPSED_START_SEC}} > 0.0
+   Propagate Prop(Sat) {Sat.ElapsedSecs = {{ELAPSED_START_SEC}}};
+EndIf;
+
+stepSec = {{STEP_SEC}};
+stepIndex = 0;
+stopEpoch = Sat.A1ModJulian + {{TOTAL_HORIZON_SEC}} / 86400;
+
+Report SarStateReport Sat.UTCGregorian Sat.EarthMJ2000Eq.X Sat.EarthMJ2000Eq.Y Sat.EarthMJ2000Eq.Z Sat.EarthMJ2000Eq.VX Sat.EarthMJ2000Eq.VY Sat.EarthMJ2000Eq.VZ TargetA.EarthMJ2000Eq.X TargetA.EarthMJ2000Eq.Y TargetA.EarthMJ2000Eq.Z TargetA.EarthMJ2000Eq.VX TargetA.EarthMJ2000Eq.VY TargetA.EarthMJ2000Eq.VZ TargetNormalPoint.EarthMJ2000Eq.X TargetNormalPoint.EarthMJ2000Eq.Y TargetNormalPoint.EarthMJ2000Eq.Z;
+
+While stepIndex < {{REGULAR_STEP_COUNT}}
+
+   Propagate Prop(Sat) {Sat.ElapsedSecs = stepSec};
+   stepIndex = stepIndex + 1;
+
+   Report SarStateReport Sat.UTCGregorian Sat.EarthMJ2000Eq.X Sat.EarthMJ2000Eq.Y Sat.EarthMJ2000Eq.Z Sat.EarthMJ2000Eq.VX Sat.EarthMJ2000Eq.VY Sat.EarthMJ2000Eq.VZ TargetA.EarthMJ2000Eq.X TargetA.EarthMJ2000Eq.Y TargetA.EarthMJ2000Eq.Z TargetA.EarthMJ2000Eq.VX TargetA.EarthMJ2000Eq.VY TargetA.EarthMJ2000Eq.VZ TargetNormalPoint.EarthMJ2000Eq.X TargetNormalPoint.EarthMJ2000Eq.Y TargetNormalPoint.EarthMJ2000Eq.Z;
+
+EndWhile;
+
+Propagate Prop(Sat) {Sat.A1ModJulian = stopEpoch};
+Report SarStateReport Sat.UTCGregorian Sat.EarthMJ2000Eq.X Sat.EarthMJ2000Eq.Y Sat.EarthMJ2000Eq.Z Sat.EarthMJ2000Eq.VX Sat.EarthMJ2000Eq.VY Sat.EarthMJ2000Eq.VZ TargetA.EarthMJ2000Eq.X TargetA.EarthMJ2000Eq.Y TargetA.EarthMJ2000Eq.Z TargetA.EarthMJ2000Eq.VX TargetA.EarthMJ2000Eq.VY TargetA.EarthMJ2000Eq.VZ TargetNormalPoint.EarthMJ2000Eq.X TargetNormalPoint.EarthMJ2000Eq.Y TargetNormalPoint.EarthMJ2000Eq.Z;

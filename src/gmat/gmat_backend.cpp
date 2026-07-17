@@ -1,10 +1,13 @@
 #include "gmat/gmat_backend.hpp"
 
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 
@@ -23,6 +26,12 @@ std::string replace_all(std::string        text,
         pos += to.size();
     }
     return text;
+}
+
+std::string precise_number(double value) {
+    std::ostringstream stream;
+    stream << std::setprecision(17) << value;
+    return stream.str();
 }
 
 std::string shell_quote(const std::filesystem::path& path) {
@@ -62,6 +71,41 @@ std::string load_template(const std::filesystem::path& template_path) {
     return ss.str();
 }
 
+std::filesystem::path resolve_template_path(const std::string& filename) {
+    if (const char* data_dir = std::getenv("ACCESS_COMPUTER_DATA_DIR")) {
+        if (*data_dir != '\0') {
+            const auto path =
+                std::filesystem::path(data_dir) / "templates" / filename;
+            if (std::filesystem::is_regular_file(path)) { return path; }
+        }
+    }
+
+    std::array<char, 4096> executable_buffer{};
+    const auto length = readlink("/proc/self/exe", executable_buffer.data(),
+                                 executable_buffer.size() - 1);
+    if (length > 0) {
+        executable_buffer[static_cast<std::size_t>(length)] = '\0';
+        const auto path =
+            std::filesystem::path(executable_buffer.data()).parent_path() /
+            ".." / "share" / "access-computer" / "templates" / filename;
+        if (std::filesystem::is_regular_file(path)) {
+            return std::filesystem::weakly_canonical(path);
+        }
+    }
+
+    if (const char* dev_root = std::getenv("ACCESS_COMPUTER_DEV_SOURCE_ROOT")) {
+        if (*dev_root != '\0') {
+            const auto path =
+                std::filesystem::path(dev_root) / "templates" / filename;
+            if (std::filesystem::is_regular_file(path)) { return path; }
+        }
+    }
+    throw std::runtime_error(
+        "GMAT template not found in installed data directory; set "
+        "ACCESS_COMPUTER_DATA_DIR or explicit "
+        "ACCESS_COMPUTER_DEV_SOURCE_ROOT for a development tree");
+}
+
 std::filesystem::path default_gmat_root() {
     if (const char* env = std::getenv("GMAT_ROOT")) {
         if (*env != '\0') { return env; }
@@ -97,8 +141,7 @@ GmatPaths resolve_gmat_paths(const nlohmann::json& request) {
 std::string render_optical_access_script(
     const nlohmann::json& request, const std::filesystem::path& work_dir) {
     const auto template_path =
-        std::filesystem::path(ACCESS_COMPUTER_SOURCE_ROOT) / "templates" /
-        "optical_access.script.in";
+        resolve_template_path("optical_access.script.in");
     auto script = load_template(template_path);
 
     const auto& task        = request.at("task");
@@ -158,8 +201,7 @@ std::string render_optical_access_script(
 std::string render_downlink_script(const nlohmann::json&        request,
                                    const std::filesystem::path& work_dir) {
     const auto template_path =
-        std::filesystem::path(ACCESS_COMPUTER_SOURCE_ROOT) / "templates" /
-        "downlink_contact.script.in";
+        resolve_template_path("downlink_contact.script.in");
     auto script = load_template(template_path);
 
     const auto& task        = request.at("task");
@@ -221,6 +263,71 @@ std::string render_downlink_script(const nlohmann::json&        request,
     return script;
 }
 
+std::string render_sar_access_script(const nlohmann::json&        request,
+                                     const std::filesystem::path& work_dir) {
+    const auto template_path = resolve_template_path("sar_access.script.in");
+    auto       script        = load_template(template_path);
+
+    const auto& task       = request.at("task");
+    const auto& spacecraft = request.at("spacecraft");
+    const auto& target     = request.at("target");
+    const auto& elements   = spacecraft.at("elements");
+
+    const double horizon_sec = task.at("compute_horizon_sec").get<double>();
+    const double step_sec    = task.at("step_sec").get<double>();
+    const auto   delta_opt =
+        delta_prop_sec(task.at("start_time_utc").get<std::string>(),
+                       spacecraft.at("epoch_utc").get<std::string>());
+    if (!delta_opt) {
+        throw std::runtime_error(
+            "Failed to derive delta_prop_sec for GMAT SAR script");
+    }
+    const double delta_prop_sec_v = std::max(0.0, *delta_opt);
+    const double target_alt_km    = target.at("alt_km").get<double>();
+
+    script                     = replace_all(script, "{{OUTPUT_DIR}}",
+                                             std::filesystem::absolute(work_dir).string());
+    script                     = replace_all(script, "{{EPOCH_UTC}}",
+                                             spacecraft.at("epoch_utc").get<std::string>());
+    script                     = replace_all(script, "{{SMA_KM}}",
+                                             std::to_string(elements.at("sma_km").get<double>()));
+    script                     = replace_all(script, "{{ECC}}",
+                                             std::to_string(elements.at("ecc").get<double>()));
+    script                     = replace_all(script, "{{INC_DEG}}",
+                                             std::to_string(elements.at("inc_deg").get<double>()));
+    script                     = replace_all(script, "{{RAAN_DEG}}",
+                                             std::to_string(elements.at("raan_deg").get<double>()));
+    script                     = replace_all(script, "{{AOP_DEG}}",
+                                             std::to_string(elements.at("aop_deg").get<double>()));
+    script                     = replace_all(script, "{{TA_DEG}}",
+                                             std::to_string(elements.at("ta_deg").get<double>()));
+    const auto full_step_count = static_cast<unsigned long long>(
+        std::floor(horizon_sec / step_sec + 1.0e-12));
+    double remainder_sec =
+        horizon_sec - static_cast<double>(full_step_count) * step_sec;
+    if (std::fabs(remainder_sec) < 1.0e-9) { remainder_sec = 0.0; }
+    auto regular_step_count = full_step_count;
+    if (remainder_sec == 0.0 && regular_step_count > 0) {
+        --regular_step_count;
+    }
+    script = replace_all(script, "{{REGULAR_STEP_COUNT}}",
+                         std::to_string(regular_step_count));
+    script = replace_all(script, "{{TOTAL_HORIZON_SEC}}",
+                         precise_number(horizon_sec));
+    script = replace_all(script, "{{ELAPSED_START_SEC}}",
+                         precise_number(delta_prop_sec_v));
+    script = replace_all(script, "{{STEP_SEC}}", precise_number(step_sec));
+    script = replace_all(script, "{{TARGET_LAT}}",
+                         std::to_string(target.at("lat_deg").get<double>()));
+    script = replace_all(script, "{{TARGET_LON}}",
+                         std::to_string(target.at("lon_deg").get<double>()));
+    script =
+        replace_all(script, "{{TARGET_ALT_KM}}", std::to_string(target_alt_km));
+    script = replace_all(script, "{{TARGET_NORMAL_ALT_KM}}",
+                         std::to_string(target_alt_km + 1.0));
+    return script;
+}
+
 GmatRunResult run_gmat_console(const GmatPaths&             paths,
                                const std::filesystem::path& script_path,
                                const std::filesystem::path& work_dir) {
@@ -237,6 +344,7 @@ GmatRunResult run_gmat_console(const GmatPaths&             paths,
     result.trace_path             = abs_work_dir / "sample_trace.txt";
     result.eclipse_path           = abs_work_dir / "eclipse_intervals.txt";
     result.ephemeris_csv          = abs_work_dir / "sat_rv_j2000.csv";
+    result.sar_state_path         = abs_work_dir / "sar_state_j2000.txt";
 
     const auto         bin_dir     = paths.install_root / "bin";
     const auto         plugins_dir = paths.install_root / "plugins";

@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,12 @@
  */
 
 namespace mp {
+
+/** @brief 永久请求校验错误；CLI 稳定映射为 EXIT_VALIDATION(2)。 */
+class ValidationError : public std::runtime_error {
+  public:
+    using std::runtime_error::runtime_error;
+};
 
 /** AC-006 D8：DL 携带三旗时的稳定 warning（勿改字）。 */
 inline constexpr const char* kIlluminationFlagsIgnoredDownlink =

@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 # Contract test for access-computer plugin (AC-003).
-# Covers: manifest 1.1, three-scenario validate+dry-run, SAR negative, exit codes.
+# Covers: manifest 1.1, optical/SAR/DL validate+dry-run, negatives, exit codes.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export ACCESS_COMPUTER_DEV_SOURCE_ROOT="$ROOT"
 BUILD="${BUILD:-$ROOT/build}"
 EXE="$BUILD/access-computer"
 MANIFEST="$ROOT/configs/plugins/access-computer.json"
 WORK_BASE="/tmp/mp_contract_access_computer_$$"
+
+cleanup() {
+  rm -rf "$WORK_BASE"
+  rm -f "/tmp/ac_contract_out_$$" "/tmp/ac_contract_err_$$"
+}
+trap cleanup EXIT
 
 if [[ ! -x "$EXE" ]]; then
   echo "missing executable: $EXE" >&2
@@ -43,6 +50,12 @@ run_expect_exit() {
   "$@" >/tmp/ac_contract_out_$$ 2>/tmp/ac_contract_err_$$
   local got=$?
   set -e
+  if [[ "$got" != "$want_exit" ]]; then
+    echo "  diagnostic stdout for $name:" >&2
+    sed -n '1,200p' /tmp/ac_contract_out_$$ >&2
+    echo "  diagnostic stderr for $name:" >&2
+    sed -n '1,200p' /tmp/ac_contract_err_$$ >&2
+  fi
   assert_eq "$name" "$got" "$want_exit"
 }
 
@@ -109,8 +122,220 @@ dry_run_ok "AE" "attitude_estimation.json"
 validate_ok "DL" "downlink_window.json"
 dry_run_ok "DL" "downlink_window.json"
 
-echo "==> [8] SAR unsupported negative (exit 2)"
-run_expect_exit "SAR validate exit" 2 \
+validate_ok "SAR-RSA" "sar_rsa.json"
+dry_run_ok "SAR-RSA" "sar_rsa.json"
+
+validate_ok "SAR-AE" "sar_attitude_estimation.json"
+dry_run_ok "SAR-AE" "sar_attitude_estimation.json"
+
+echo "==> [8] input/output JSON Schema positive and negative contracts"
+python3 - "$ROOT" <<'PY'
+import copy
+import json
+import pathlib
+import sys
+
+import jsonschema
+
+root = pathlib.Path(sys.argv[1])
+input_schema = json.loads(
+    (root / "schemas/remote_sensing_access.input.schema.json").read_text()
+)
+output_schema = json.loads(
+    (root / "schemas/remote_sensing_access.output.schema.json").read_text()
+)
+input_validator = jsonschema.Draft202012Validator(input_schema)
+output_validator = jsonschema.Draft202012Validator(output_schema)
+
+sar_rsa = json.loads((root / "samples/sar_rsa.json").read_text())
+sar_ae = json.loads((root / "samples/sar_attitude_estimation.json").read_text())
+input_validator.validate(sar_rsa)
+input_validator.validate(sar_ae)
+
+input_negatives = []
+case = copy.deepcopy(sar_rsa)
+case.pop("sensor")
+input_negatives.append(("missing sensor", case))
+case = copy.deepcopy(sar_rsa)
+case["sensor"]["mode"] = "stare"
+input_negatives.append(("illegal SAR mode", case))
+case = copy.deepcopy(sar_rsa)
+case["sensor"].pop("azimuth_beamwidth_deg")
+input_negatives.append(("missing beamwidth", case))
+case = copy.deepcopy(sar_rsa)
+case["sensor"]["azimuth_beamwidth_deg"] = 180.0
+input_negatives.append(("beamwidth upper bound", case))
+case = copy.deepcopy(sar_rsa)
+case["constraints"]["roll_max_deg"] = 0.0
+input_negatives.append(("roll strict lower bound", case))
+case = copy.deepcopy(sar_ae)
+case["constraints"]["max_abs_range_rate_mps"] = "0.1"
+input_negatives.append(("non-numeric residual", case))
+case = copy.deepcopy(sar_ae)
+case["selected_window"]["unexpected"] = True
+input_negatives.append(("selected_window unknown field", case))
+for name, document in input_negatives:
+    if not list(input_validator.iter_errors(document)):
+        raise SystemExit(f"input schema negative unexpectedly accepted: {name}")
+
+geometry = {
+    "incidence_angle_deg": 30.0,
+    "look_side": "left",
+    "side_look_angle_deg": 28.0,
+    "squint_deg": 0.01,
+    "roll_deg": 29.0,
+    "pitch_deg": 0.1,
+    "yaw_deg": 0.2,
+    "slant_range_km": 500.0,
+    "range_rate_mps": 0.01,
+    "doppler_centroid_hz": -0.36,
+    "los_clear": True,
+}
+window = {
+    "start_utc": "2026-12-30T00:00:00.000Z",
+    "end_utc": "2026-12-30T00:00:02.000Z",
+    "duration_sec": 2.0,
+    "t0_utc": "2026-12-30T00:00:01.000Z",
+    "phi_deg": 29.0,
+    "node_id": "local",
+    "sar_geometry": geometry,
+}
+attitude = {
+    "mode": "stripmap",
+    "attitude_status": "computed",
+    "t0_utc": "2026-12-30T00:00:01.000Z",
+    "reference_frame": "EarthMJ2000Eq",
+    "quaternion_body_to_reference": {
+        "order": "wxyz",
+        "values": [1.0, 0.0, 0.0, 0.0],
+    },
+    "roll_deg": 29.0,
+    "pitch_deg": 0.1,
+    "yaw_deg": 0.2,
+    "squint_deg": 0.01,
+    "incidence_angle_deg": 30.0,
+    "look_side": "left",
+    "side_look_angle_deg": 28.0,
+    "slant_range_km": 500.0,
+    "range_rate_mps": 0.01,
+    "doppler_centroid_hz": -0.36,
+}
+succeeded = {
+    "task_id": "task",
+    "scenario": "attitude_estimation",
+    "status": "succeeded",
+    "windows": [window],
+    "summary": {"window_count": 1, "duration_total_sec": 2.0},
+    "attitude": attitude,
+    "artifacts": {"sar_state_path": "/tmp/state.txt"},
+    "warnings": [],
+}
+no_result = {
+    "task_id": "task",
+    "scenario": "attitude_estimation",
+    "status": "no_result",
+    "windows": [],
+    "summary": {"window_count": 0, "duration_total_sec": 0.0},
+    "artifacts": {"sar_state_path": "/tmp/state.txt"},
+    "warnings": ["no feasible SAR attitude solution"],
+}
+minimal_window = {
+    "start_utc": "2026-12-30T00:00:00.000Z",
+    "end_utc": "2026-12-30T00:00:02.000Z",
+    "node_id": "local",
+}
+optical_ae = copy.deepcopy(succeeded)
+optical_ae["windows"] = [minimal_window]
+optical_ae["attitude"] = {
+    "mode": "side_roll_only",
+    "t0_utc": "2026-12-30T00:00:01.000Z",
+}
+rsa = copy.deepcopy(succeeded)
+rsa["scenario"] = "remote_sensing_access"
+rsa["windows"] = [minimal_window]
+rsa.pop("attitude")
+downlink = copy.deepcopy(rsa)
+downlink["scenario"] = "downlink_window"
+output_validator.validate(succeeded)
+output_validator.validate(no_result)
+output_validator.validate(optical_ae)
+output_validator.validate(rsa)
+output_validator.validate(downlink)
+
+output_negatives = []
+case = copy.deepcopy(succeeded)
+case.pop("attitude")
+output_negatives.append(("succeeded AE missing attitude", case))
+case = copy.deepcopy(succeeded)
+case["attitude"] = {}
+output_negatives.append(("succeeded AE empty attitude", case))
+case = copy.deepcopy(succeeded)
+case["attitude"].pop("quaternion_body_to_reference")
+output_negatives.append(("SAR full attitude missing quaternion", case))
+for field in (
+    "start_utc",
+    "end_utc",
+    "duration_sec",
+    "t0_utc",
+    "phi_deg",
+    "node_id",
+    "sar_geometry",
+):
+    case = copy.deepcopy(succeeded)
+    case["windows"][0].pop(field)
+    output_negatives.append((f"SAR AE window missing {field}", case))
+case = copy.deepcopy(no_result)
+case["windows"] = [window]
+output_negatives.append(("no_result with window", case))
+case = copy.deepcopy(no_result)
+case["summary"]["window_count"] = 1
+output_negatives.append(("no_result nonzero summary", case))
+case = copy.deepcopy(succeeded)
+case["scenario"] = "remote_sensing_access"
+output_negatives.append(("RSA output with attitude", case))
+for name, document in output_negatives:
+    if not list(output_validator.iter_errors(document)):
+        raise SystemExit(f"output schema negative unexpectedly accepted: {name}")
+
+print("  OK  JSON Schema positive/negative matrix")
+PY
+pass=$((pass + 1))
+
+echo "==> [8b] permanent invalid SAR inputs return stable exit 2"
+MUTATIONS="$WORK_BASE/mutations"
+mkdir -p "$MUTATIONS"
+python3 - "$ROOT" "$MUTATIONS" <<'PY'
+import copy
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+out = pathlib.Path(sys.argv[2])
+rsa = json.loads((root / "samples/sar_rsa.json").read_text())
+ae = json.loads((root / "samples/sar_attitude_estimation.json").read_text())
+cases = {}
+case = copy.deepcopy(rsa); case.pop("sensor"); cases["missing_sensor"] = case
+case = copy.deepcopy(rsa); case["sensor"]["mode"] = "stare"; cases["bad_mode"] = case
+case = copy.deepcopy(rsa); case["sensor"].pop("azimuth_beamwidth_deg"); cases["missing_beam"] = case
+case = copy.deepcopy(rsa); case["sensor"]["azimuth_beamwidth_deg"] = 0.0; cases["bad_beam"] = case
+case = copy.deepcopy(rsa); case["constraints"]["max_abs_squint_deg"] = 5.001; cases["bad_squint"] = case
+case = copy.deepcopy(rsa); case["constraints"]["roll_max_deg"] = 0.0; cases["bad_roll"] = case
+case = copy.deepcopy(ae); case["constraints"]["max_abs_range_rate_mps"] = "0.1"; cases["bad_residual"] = case
+case = copy.deepcopy(ae); case["selected_window"]["unexpected"] = True; cases["unknown_window_field"] = case
+for name, document in cases.items():
+    (out / f"{name}.json").write_text(json.dumps(document))
+PY
+for invalid in missing_sensor bad_mode missing_beam bad_beam bad_squint bad_roll bad_residual unknown_window_field; do
+  run_expect_exit "validate $invalid exit" 2 \
+    "$EXE" validate --input "$MUTATIONS/$invalid.json"
+  run_expect_exit "dry-run $invalid exit" 2 \
+    "$EXE" run --input "$MUTATIONS/$invalid.json" \
+      --work-dir "$WORK_BASE/invalid-$invalid" --dry-run --output json
+done
+
+echo "==> [8c] SAR incomplete contract negative (exit 2)"
+run_expect_exit "SAR incomplete validate exit" 2 \
   "$EXE" validate --input "$ROOT/samples/sar_unsupported.json"
 
 echo "==> [9] validate missing --input (usage/validation)"
@@ -265,7 +490,203 @@ else
   assert_eq "ac008-harness exit" "$got" "0"
 fi
 
-rm -rf "$WORK_BASE"
+echo "==> [19] AC-010 harness (SAR RSA geometry/report/windows)"
+HARNESS10="$BUILD/ac010-harness"
+if [[ ! -x "$HARNESS10" ]]; then
+  echo "missing harness: $HARNESS10 (meson compile -C build)" >&2
+  fail=$((fail + 1))
+else
+  set +e
+  "$HARNESS10"
+  got=$?
+  set -e
+  assert_eq "ac010-harness exit" "$got" "0"
+fi
+
+echo "==> [20] AC-024 harness (SAR zero-Doppler/quaternion/no_result)"
+HARNESS24="$BUILD/ac024-harness"
+if [[ ! -x "$HARNESS24" ]]; then
+  echo "missing harness: $HARNESS24 (meson compile -C build)" >&2
+  fail=$((fail + 1))
+else
+  set +e
+  "$HARNESS24"
+  got=$?
+  set -e
+  assert_eq "ac024-harness exit" "$got" "0"
+fi
+
+echo "==> [21] staged-install relocation loads templates without source tree"
+INSTALL_STAGE="$WORK_BASE/install-stage"
+RELOCATED="$WORK_BASE/relocated"
+meson install -C "$BUILD" --destdir "$INSTALL_STAGE" >/dev/null
+INSTALLED_EXE="$(find "$INSTALL_STAGE" -type f -path '*/bin/access-computer' -print -quit)"
+if [[ -z "$INSTALLED_EXE" ]]; then
+  echo "  FAIL staged install missing access-computer" >&2
+  fail=$((fail + 1))
+else
+  INSTALLED_PREFIX="$(dirname "$(dirname "$INSTALLED_EXE")")"
+  mkdir -p "$RELOCATED"
+  cp -a "$INSTALLED_PREFIX/." "$RELOCATED/"
+  python3 - "$ROOT" "$WORK_BASE/relocated-request.json" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+output = pathlib.Path(sys.argv[2])
+request = json.loads((root / "samples/sar_rsa.json").read_text())
+request["gmat"] = {"install_root": "/usr", "console_binary": "/bin/true"}
+output.write_text(json.dumps(request))
+PY
+  set +e
+  env -u ACCESS_COMPUTER_DEV_SOURCE_ROOT -u ACCESS_COMPUTER_DATA_DIR \
+    "$RELOCATED/bin/access-computer" run \
+      --input "$WORK_BASE/relocated-request.json" \
+      --work-dir "$WORK_BASE/relocated-work" --output json \
+      >"$WORK_BASE/relocated.out" 2>"$WORK_BASE/relocated.err"
+  got=$?
+  set -e
+  assert_eq "relocated fake-GMAT exit" "$got" "5"
+  if [[ -s "$WORK_BASE/relocated-work/rendered.script" ]] &&
+     grep -q "TargetA.HorizonReference = Ellipsoid" \
+       "$WORK_BASE/relocated-work/rendered.script" &&
+     ! grep -q "template unavailable" "$WORK_BASE/relocated.out" \
+       "$WORK_BASE/relocated.err"; then
+    echo "  OK  relocated installed SAR template loaded"
+    pass=$((pass + 1))
+  else
+    echo "  FAIL relocated installed SAR template was not loaded" >&2
+    fail=$((fail + 1))
+  fi
+fi
+
+if [[ "${RUN_GMAT_INTEGRATION:-0}" == "1" ]]; then
+  echo "==> [22] real GMAT SAR RSA -> full-window AE -> independent replay"
+  REAL="$WORK_BASE/real-gmat"
+  mkdir -p "$REAL"
+  python3 - "$ROOT" "$REAL/rsa-request.json" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+output = pathlib.Path(sys.argv[2])
+request = json.loads((root / "samples/sar_rsa.json").read_text())
+request["task"]["compute_horizon_sec"] = 14400.0
+output.write_text(json.dumps(request))
+PY
+  set +e
+  "$EXE" run --input "$REAL/rsa-request.json" \
+    --work-dir "$REAL/rsa" --output json-pretty >"$REAL/rsa-result.json"
+  rsa_exit=$?
+  set -e
+  assert_eq "real SAR RSA exit" "$rsa_exit" "0"
+  if [[ "$rsa_exit" == "0" ]]; then
+    python3 - "$ROOT" "$REAL/rsa-result.json" "$REAL/ae-request.json" <<'PY'
+import datetime as dt
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+rsa_result = json.loads(pathlib.Path(sys.argv[2]).read_text())
+output = pathlib.Path(sys.argv[3])
+if rsa_result.get("status") != "succeeded" or not rsa_result.get("windows"):
+    raise SystemExit("real SAR RSA did not return a window")
+request = json.loads((root / "samples/sar_attitude_estimation.json").read_text())
+selected = rsa_result["windows"][0]
+request["selected_window"] = selected
+parse = lambda value: dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+format_utc = lambda value: value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+start = parse(selected["start_utc"])
+end = parse(selected["end_utc"])
+task_start = start - dt.timedelta(seconds=60)
+request["task"]["start_time_utc"] = format_utc(task_start)
+request["task"]["compute_horizon_sec"] = max(
+    300.0, (end - start).total_seconds() + 120.0
+)
+output.write_text(json.dumps(request))
+PY
+    run_expect_exit "full AC-010 window validates for AE" 0 \
+      "$EXE" validate --input "$REAL/ae-request.json"
+    set +e
+    "$EXE" run --input "$REAL/ae-request.json" \
+      --work-dir "$REAL/ae" --output json-pretty >"$REAL/ae-result.json"
+    ae_exit=$?
+    set -e
+    assert_eq "real SAR AE exit" "$ae_exit" "0"
+    if [[ "$ae_exit" == "0" ]]; then
+      run_expect_exit "real RSA independent replay" 0 \
+        "$HARNESS10" "$REAL/rsa/sar_state_j2000.txt" \
+          "$REAL/rsa-result.json"
+      run_expect_exit "real AE independent replay" 0 \
+        "$HARNESS24" "$REAL/ae/sar_state_j2000.txt" \
+          "$REAL/ae-result.json" "$REAL/ae-request.json"
+      python3 - "$REAL/ae-result.json" <<'PY'
+import json
+import sys
+
+result = json.load(open(sys.argv[1]))
+attitude = result["attitude"]
+window = result["windows"][0]
+if not attitude["t0_utc"].endswith("Z") or "." not in attitude["t0_utc"]:
+    raise SystemExit("AE t0 is not canonical millisecond UTC")
+if abs(attitude["squint_deg"]) > 5.0:
+    raise SystemExit("AE actual squint exceeds effective beam gate")
+if abs(attitude["roll_deg"]) > 70.0:
+    raise SystemExit("AE mechanical roll exceeds gate")
+if not (window["start_utc"] <= attitude["t0_utc"] <= window["end_utc"]):
+    raise SystemExit("AE refined window does not contain t0")
+print("  OK  real AE millisecond/squint/roll/refined-window invariants")
+PY
+      pass=$((pass + 1))
+    fi
+  fi
+
+  echo "==> [22b] real GMAT non-integer horizon endpoint regression"
+  python3 - "$ROOT" "$REAL/tail-request.json" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+output = pathlib.Path(sys.argv[2])
+request = json.loads((root / "samples/sar_rsa.json").read_text())
+request["task"]["compute_horizon_sec"] = 60.5
+request["task"]["working_time_sec"] = 60.0
+request["task"]["step_sec"] = 10.0
+output.write_text(json.dumps(request))
+PY
+  set +e
+  "$EXE" run --input "$REAL/tail-request.json" \
+    --work-dir "$REAL/tail" --output json-pretty >"$REAL/tail-result.json"
+  tail_exit=$?
+  set -e
+  if [[ "$tail_exit" == "0" || "$tail_exit" == "4" ]]; then
+    echo "  OK  real tail-horizon planner exit ($tail_exit)"
+    pass=$((pass + 1))
+  else
+    echo "  FAIL real tail-horizon planner exit: got=$tail_exit want=0|4" >&2
+    fail=$((fail + 1))
+  fi
+  python3 - "$REAL/tail/sar_state_j2000.txt" <<'PY'
+import datetime as dt
+import pathlib
+import sys
+
+lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+if len(lines) != 8:
+    raise SystemExit(f"expected start + 6 full steps + terminal = 8 rows, got {len(lines)}")
+tokens = lines[-1].split()
+last = dt.datetime.strptime(" ".join(tokens[:4]), "%d %b %Y %H:%M:%S.%f")
+want = dt.datetime(2026, 12, 30, 0, 1, 0, 500000)
+if last != want:
+    raise SystemExit(f"tail report endpoint mismatch: {last} != {want}")
+print("  OK  real GMAT report reaches exact non-integer horizon endpoint")
+PY
+  pass=$((pass + 1))
+fi
 
 echo "==> summary: pass=$pass fail=$fail"
 if [[ "$fail" -ne 0 ]]; then

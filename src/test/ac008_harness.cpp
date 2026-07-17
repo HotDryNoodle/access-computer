@@ -4,6 +4,7 @@
  */
 
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -134,6 +135,7 @@ mp::AccessWindow make_win(const std::string& start,
 }  // namespace
 
 int main() {
+    setenv("ACCESS_COMPUTER_DEV_SOURCE_ROOT", ACCESS_COMPUTER_SOURCE_ROOT, 1);
     using mp::AccessWindow;
     using mp::build_lvlh_frame;
     using mp::compute_attitude_angles;

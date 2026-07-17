@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 
 #include "planner/time_model.hpp"
 
@@ -9,21 +10,23 @@ namespace mp {
 
 namespace {
 
-constexpr double kAccessDefaultHorizonSec     = 172800.0;
-constexpr double kAccessDefaultWorkingTimeSec = 200.0;
-constexpr double kAccessDefaultStepSec        = 10.0;
-constexpr double kAccessDefaultRollMaxDeg     = 30.0;
-constexpr double kAttitudeMinHorizonSec       = 300.0;
-constexpr double kAttitudeMaxHorizonSec       = 1800.0;
-constexpr double kAttitudeDefaultStepSec      = 1.0;
-constexpr double kDownlinkMinHorizonSec       = 3600.0;
-constexpr double kDownlinkMaxHorizonSec       = 7200.0;
-constexpr double kDownlinkDefaultStepSec      = 5.0;
+constexpr double kAccessDefaultHorizonSec      = 172800.0;
+constexpr double kAccessDefaultWorkingTimeSec  = 200.0;
+constexpr double kAccessDefaultStepSec         = 10.0;
+constexpr double kAccessDefaultRollMaxDeg      = 30.0;
+constexpr double kAttitudeMinHorizonSec        = 300.0;
+constexpr double kAttitudeMaxHorizonSec        = 1800.0;
+constexpr double kAttitudeDefaultStepSec       = 1.0;
+constexpr double kSarDefaultMaxAbsRangeRateMps = 0.1;
+constexpr double kDownlinkMinHorizonSec        = 3600.0;
+constexpr double kDownlinkMaxHorizonSec        = 7200.0;
+constexpr double kDownlinkDefaultStepSec       = 5.0;
 /** AC-007：默认 cone 80° → MinimumElevationAngle 10°。 */
 constexpr double kDownlinkDefaultConeDeg = 80.0;
 
 bool has_number(const nlohmann::json& obj, const char* key) {
-    return obj.contains(key) && obj[key].is_number();
+    return obj.contains(key) && obj[key].is_number() &&
+           std::isfinite(obj[key].get<double>());
 }
 
 bool has_string(const nlohmann::json& obj, const char* key) {
@@ -44,10 +47,16 @@ double get_number_or(const nlohmann::json& obj,
     return fallback;
 }
 
-bool experimental_allows_sar(const nlohmann::json& request) {
-    return request.contains("experimental") &&
-           request["experimental"].is_object() &&
-           request["experimental"].value("allow_sar", false);
+std::string first_unknown_field(
+    const nlohmann::json&              object,
+    std::initializer_list<const char*> allowed_fields) {
+    for (auto field = object.begin(); field != object.end(); ++field) {
+        const bool known = std::any_of(
+            allowed_fields.begin(), allowed_fields.end(),
+            [&](const char* allowed) { return field.key() == allowed; });
+        if (!known) { return field.key(); }
+    }
+    return {};
 }
 
 }  // namespace
@@ -290,11 +299,86 @@ ValidationResult validate_request(const nlohmann::json& request) {
         const auto sensor_type = sensor["type"].get<std::string>();
 
         if (sensor_type == "sar") {
-            if (!experimental_allows_sar(request)) {
-                return fail(
-                    "sensor.type=sar is not implemented in v0.1.0; set "
-                    "experimental.allow_sar=true only for contract testing");
+            if (sensor.value("mode", "") != "stripmap") {
+                return fail("SAR MVP requires sensor.mode=stripmap");
             }
+            if (!has_number(sensor, "center_frequency_hz") ||
+                sensor["center_frequency_hz"].get<double>() <= 0.0) {
+                return fail(
+                    "SAR MVP requires finite sensor.center_frequency_hz > 0");
+            }
+            if (!has_number(sensor, "azimuth_beamwidth_deg")) {
+                return fail(
+                    "SAR MVP requires finite sensor.azimuth_beamwidth_deg");
+            }
+            const double beamwidth_deg =
+                sensor["azimuth_beamwidth_deg"].get<double>();
+            if (!(beamwidth_deg > 0.0 && beamwidth_deg < 180.0)) {
+                return fail(
+                    "sensor.azimuth_beamwidth_deg must satisfy 0 < width < "
+                    "180 deg");
+            }
+            if (!has_number(constraints, "incidence_min_deg") ||
+                !has_number(constraints, "incidence_max_deg")) {
+                return fail(
+                    "SAR MVP requires finite constraints.incidence_min_deg "
+                    "and constraints.incidence_max_deg");
+            }
+            const double incidence_min =
+                constraints["incidence_min_deg"].get<double>();
+            const double incidence_max =
+                constraints["incidence_max_deg"].get<double>();
+            if (!(incidence_min > 0.0 && incidence_min < incidence_max &&
+                  incidence_max < 90.0)) {
+                return fail(
+                    "SAR incidence constraints must satisfy 0 < min < max < "
+                    "90 deg");
+            }
+            if (!has_string(constraints, "allowed_look_side")) {
+                return fail("SAR MVP requires constraints.allowed_look_side");
+            }
+            const auto allowed_side =
+                constraints["allowed_look_side"].get<std::string>();
+            if (allowed_side != "left" && allowed_side != "right" &&
+                allowed_side != "either") {
+                return fail(
+                    "constraints.allowed_look_side must be left, right, or "
+                    "either");
+            }
+            if (!has_number(constraints, "roll_max_deg") ||
+                constraints["roll_max_deg"].get<double>() <= 0.0 ||
+                constraints["roll_max_deg"].get<double>() > 90.0) {
+                return fail(
+                    "SAR MVP requires finite constraints.roll_max_deg in "
+                    "(0, 90]");
+            }
+            double max_abs_squint_deg = beamwidth_deg / 2.0;
+            if (constraints.contains("max_abs_squint_deg")) {
+                if (!has_number(constraints, "max_abs_squint_deg")) {
+                    return fail(
+                        "constraints.max_abs_squint_deg must be finite when "
+                        "provided");
+                }
+                max_abs_squint_deg =
+                    constraints["max_abs_squint_deg"].get<double>();
+                if (!(max_abs_squint_deg > 0.0 &&
+                      max_abs_squint_deg <= beamwidth_deg / 2.0)) {
+                    return fail(
+                        "constraints.max_abs_squint_deg must satisfy 0 < "
+                        "value <= sensor.azimuth_beamwidth_deg/2");
+                }
+            }
+            result.details["sar"] = {
+                {"mode", "stripmap"},
+                {"center_frequency_hz",
+                 sensor["center_frequency_hz"].get<double>()},
+                {"incidence_min_deg", incidence_min},
+                {"incidence_max_deg", incidence_max},
+                {"allowed_look_side", allowed_side},
+                {"roll_max_deg", constraints["roll_max_deg"].get<double>()},
+                {"azimuth_beamwidth_deg", beamwidth_deg},
+                {"max_abs_squint_deg", max_abs_squint_deg},
+            };
             if (has_illumination_constraint_flags(constraints)) {
                 result.details["warnings"] =
                     nlohmann::json::array({kIlluminationFlagsIgnoredSar});
@@ -323,8 +407,9 @@ ValidationResult validate_request(const nlohmann::json& request) {
         }
 
         if (constraints.contains("roll_max_deg") &&
-            constraints["roll_max_deg"].get<double>() <= 0) {
-            return fail("constraints.roll_max_deg must be > 0");
+            (!has_number(constraints, "roll_max_deg") ||
+             constraints["roll_max_deg"].get<double>() <= 0)) {
+            return fail("constraints.roll_max_deg must be finite and > 0");
         }
 
         if (scenario == "remote_sensing_access") {
@@ -360,11 +445,98 @@ ValidationResult validate_request(const nlohmann::json& request) {
                     "attitude_estimation task.step_sec is expected around 1 "
                     "second");
             }
-            if (sensor_type != "optical_area_array" &&
-                sensor_type != "optical_linescan") {
-                return fail(
-                    "attitude_estimation currently supports optical sensors "
-                    "only");
+            if (sensor_type == "sar") {
+                if (!request.contains("selected_window") ||
+                    !request["selected_window"].is_object()) {
+                    return fail(
+                        "SAR attitude_estimation requires selected_window");
+                }
+                const auto& selected         = request["selected_window"];
+                const auto  unknown_selected = first_unknown_field(
+                    selected, {"start_utc", "end_utc", "t0_utc", "duration_sec",
+                                "phi_deg", "pass_type", "min_off_nadir_deg",
+                                "max_sun_elevation_deg", "max_elevation_deg",
+                                "node_id", "sar_geometry"});
+                if (!unknown_selected.empty()) {
+                    return fail("selected_window contains unknown field: " +
+                                unknown_selected);
+                }
+                if (selected.contains("sar_geometry")) {
+                    if (!selected["sar_geometry"].is_object()) {
+                        return fail(
+                            "selected_window.sar_geometry must be an "
+                            "object when provided");
+                    }
+                    const auto unknown_geometry = first_unknown_field(
+                        selected["sar_geometry"],
+                        {"incidence_angle_deg", "look_side",
+                         "side_look_angle_deg", "squint_deg", "roll_deg",
+                         "pitch_deg", "yaw_deg", "slant_range_km",
+                         "range_rate_mps", "doppler_centroid_hz", "los_clear"});
+                    if (!unknown_geometry.empty()) {
+                        return fail(
+                            "selected_window.sar_geometry contains unknown "
+                            "field: " +
+                            unknown_geometry);
+                    }
+                }
+                if (!has_string(selected, "start_utc") ||
+                    !has_string(selected, "end_utc") ||
+                    !has_string(selected, "t0_utc")) {
+                    return fail(
+                        "selected_window requires start_utc, end_utc, and "
+                        "t0_utc");
+                }
+                const auto selected_start =
+                    parse_iso8601_utc(selected["start_utc"].get<std::string>());
+                const auto selected_end =
+                    parse_iso8601_utc(selected["end_utc"].get<std::string>());
+                const auto selected_seed =
+                    parse_iso8601_utc(selected["t0_utc"].get<std::string>());
+                if (!selected_start || !selected_end || !selected_seed) {
+                    return fail(
+                        "selected_window times must be canonical ISO-8601 "
+                        "UTC ending with Z");
+                }
+                if (!(*selected_start < *selected_end) ||
+                    *selected_seed < *selected_start ||
+                    *selected_seed > *selected_end) {
+                    return fail(
+                        "selected_window must satisfy start < end and start "
+                        "<= t0 <= end");
+                }
+                const auto task_start = parse_iso8601_utc(start_utc);
+                const auto task_end =
+                    *task_start +
+                    std::chrono::duration_cast<
+                        std::chrono::system_clock::duration>(
+                        std::chrono::duration<double>(horizon_sec));
+                if (*selected_start < *task_start || *selected_end > task_end) {
+                    return fail(
+                        "selected_window must be contained in the task "
+                        "compute horizon");
+                }
+                if (constraints.contains("max_abs_range_rate_mps") &&
+                    !has_number(constraints, "max_abs_range_rate_mps")) {
+                    return fail(
+                        "constraints.max_abs_range_rate_mps must be finite "
+                        "when provided");
+                }
+                const double max_rate =
+                    get_number_or(constraints, "max_abs_range_rate_mps",
+                                  kSarDefaultMaxAbsRangeRateMps);
+                if (!(max_rate > 0.0) || !std::isfinite(max_rate)) {
+                    return fail(
+                        "constraints.max_abs_range_rate_mps must be finite "
+                        "and > 0");
+                }
+                result.details["sar"]["max_abs_range_rate_mps"] = max_rate;
+                result.details["sar"]["selected_window"]        = selected;
+            }
+            else if (sensor_type != "optical_area_array" &&
+                     sensor_type != "optical_linescan") {
+                return fail("Unsupported attitude_estimation sensor.type: " +
+                            sensor_type);
             }
         }
     }
@@ -408,6 +580,9 @@ ValidationResult validate_request(const nlohmann::json& request) {
     }
     if (result.details.contains("downlink")) {
         details["downlink"] = result.details["downlink"];
+    }
+    if (result.details.contains("sar")) {
+        details["sar"] = result.details["sar"];
     }
     result.details = std::move(details);
     if (spacecraft.contains("propagation_profile")) {

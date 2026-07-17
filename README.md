@@ -28,8 +28,8 @@ Depends on **satellite-plugin-sdk** via Meson wrap (`subprojects/satellite-plugi
 
 | Scenario | Horizon | Step | Sensor | Key outputs |
 |----------|---------|------|--------|-------------|
-| `remote_sensing_access` | 2 days (`172800 s`) | `10 s` | optical implemented; SAR planned (AC-010) | long-horizon candidate windows and coarse `t0_utc` seed |
-| `attitude_estimation` | 5-30 min (`300-1800 s`) | `1 s` | optical implemented; SAR planned (AC-024) | precise execution `t0_utc` and attitude |
+| `remote_sensing_access` | 2 days (`172800 s`) | `10 s` | optical + SAR stripmap | long-horizon candidate windows and coarse `t0_utc` seed |
+| `attitude_estimation` | 5-30 min (`300-1800 s`) | `1 s` | optical + SAR stripmap | precise execution `t0_utc` and attitude |
 | `downlink_window` | 1-2 h (`3600-7200 s`) | `5 s` | `downlink_cone` (optional) | `[start_utc, end_utc, max_elevation_deg]` |
 
 ### Sensor support matrix (v0.1.0)
@@ -38,7 +38,7 @@ Depends on **satellite-plugin-sdk** via Meson wrap (`subprojects/satellite-plugi
 |--------|----------------|----------|-------|
 | `optical_linescan` + `side_roll_only` | supported | supported | Off-nadir cone geometry (intent-aligned with GMAT `Ex_OpticalSSO_Access`; no in-repo example script). RSA `phi_deg` = unsigned off-nadir **proxy** (≠ roll). See [`ac-009-rsa-algorithm.md`](../../docs/architecture/ac-009-rsa-algorithm.md). |
 | `optical_area_array` + `stare` | supported | supported | AE `pitch_deg` / signed roll via AC-008; RSA window `phi` still off-nadir proxy |
-| `sar` | not implemented (AC-010) | not implemented (AC-024) | RSA will use incidence-angle range + look side + LOS + mechanical roll and a coarse min-`|range_rate|` seed. AE will solve zero Doppler at 1 ms and output a full executable attitude. `experimental.allow_sar=true` does not make the current optical path SAR-capable. |
+| `sar` + `stripmap` | supported (AC-010) | supported (AC-024) | RSA requires full azimuth beamwidth plus incidence/look/LOS/actual-squint/mechanical-roll gates and emits a coarse min-`|range_rate|` seed. AE accepts one complete RSA window unchanged, solves zero Doppler on the absolute UTC millisecond grid, recomputes actual squint and the refined geometry window, and outputs a body→`EarthMJ2000Eq` `wxyz` quaternion. `side_look_angle_deg` is not mechanical roll. |
 | `downlink_cone` | n/a | n/a | Downlink only; `cone_angle_deg` default `80` → min elev `10°` |
 
 **Algorithm SSOT**：[`docs/architecture/ac-009-rsa-algorithm.md`](../../docs/architecture/ac-009-rsa-algorithm.md)（光学/SAR 的 RSA 长期规划 + AE 临期精化，以及两类传感器的几何差异）。
@@ -49,13 +49,15 @@ Depends on **satellite-plugin-sdk** via Meson wrap (`subprojects/satellite-plugi
 ./build/access-computer manifest --output json
 ./build/access-computer validate --input samples/remote_sensing_access.json
 ./build/access-computer run --input samples/remote_sensing_access_gmat_compatible_2day.json --work-dir /tmp/mp_gmat_2day --output json
+./build/access-computer run --input samples/sar_rsa.json --work-dir /tmp/ac010_sar_rsa --output json
+./build/access-computer run --input samples/sar_attitude_estimation.json --work-dir /tmp/ac024_sar_ae --output json
 ```
 
-Environment: `GMAT_ROOT` — default GMAT install root if not set in request JSON.
+Environment: `GMAT_ROOT` — default GMAT install root if not set in request JSON. Installed binaries load templates from the executable-relative `share/access-computer/templates`; `ACCESS_COMPUTER_DEV_SOURCE_ROOT` is an explicit build-tree development override only.
 
-## GMAT optical regression
+## GMAT regression
 
-Set `RUN_GMAT_INTEGRATION=1` with `./scripts/build_and_smoke.sh` for full GMAT regression.
+Set `RUN_GMAT_INTEGRATION=1` for the contract script to run the real SAR RSA→AE closed loop, independent SAR geometry/attitude formula checks (with the strict report parser and Hermite interpolation shared), and non-integer-horizon endpoint regression. Optical full regression remains available through `./scripts/build_and_smoke.sh`.
 
 ## Exit codes
 
