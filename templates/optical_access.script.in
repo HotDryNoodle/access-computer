@@ -85,9 +85,9 @@ RvReport.ColumnWidth  = 24;
 Create Variable pi deg2rad Re rollMaxDeg rollRad swathHalf altKm;
 Create Variable latRad lonRad;
 Create Variable ex ey ez nx ny nz ve vn;
-Create Variable tX tY tZ tNorm ux uy uz;
+Create Variable tX tY tZ tNorm targetRadiusKm ux uy uz;
 Create Variable srX srY srZ srNorm alphaSun;
-Create Variable satX satY satZ satNorm losX losY losZ losNorm losUX losUY losUZ;
+Create Variable satX satY satZ satNorm losX losY losZ losNorm losLimit losUX losUY losUZ;
 Create Variable nadirDotLos offNadirDeg bHalf cRay discRay tHit1 tHit2 losClear;
 Create Variable tgtLatDeg tgtLonDeg tgtLatRad tgtLonRad dLon cosPsi groundRangeKm;
 Create Variable inSwath lit geomVisible stepSec;
@@ -120,10 +120,19 @@ While Sat.ElapsedDays < {{TOTAL_DURATION_DAYS}}
    satZ = Sat.EarthFixed.Z;
    satNorm = sqrt(satX * satX + satY * satY + satZ * satZ);
 
+   % Match the occulting sphere to GMAT's GroundStation placement radius.
+   % Using the equatorial Re at alt=0 creates a false hit for geodetic points.
+   tX = TargetA.EarthFixed.X;
+   tY = TargetA.EarthFixed.Y;
+   tZ = TargetA.EarthFixed.Z;
+   tNorm = sqrt(tX * tX + tY * tY + tZ * tZ);
+   targetRadiusKm = tNorm;
+
    losX = TargetA.EarthFixed.X - satX;
    losY = TargetA.EarthFixed.Y - satY;
    losZ = TargetA.EarthFixed.Z - satZ;
    losNorm = sqrt(losX * losX + losY * losY + losZ * losZ);
+   losLimit = losNorm - 1.0e-3;
 
    If satNorm > 1.0e-6 & losNorm > 1.0e-6
       losUX = losX / losNorm;
@@ -138,16 +147,16 @@ While Sat.ElapsedDays < {{TOTAL_DURATION_DAYS}}
       EndIf;
       offNadirDeg = acos(nadirDotLos) / deg2rad;
       bHalf = satX * losUX + satY * losUY + satZ * losUZ;
-      cRay = satNorm * satNorm - Re * Re;
+      cRay = satNorm * satNorm - targetRadiusKm * targetRadiusKm;
       discRay = bHalf * bHalf - cRay;
       losClear = 1.0;
       If discRay >= 0.0
          tHit1 = -bHalf - sqrt(discRay);
-         If tHit1 > 1.0e-3 & tHit1 < losNorm
+         If tHit1 > 1.0e-3 & tHit1 < losLimit
             losClear = 0.0;
          EndIf;
          tHit2 = -bHalf + sqrt(discRay);
-         If tHit2 > 1.0e-3 & tHit2 < losNorm
+         If tHit2 > 1.0e-3 & tHit2 < losLimit
             losClear = 0.0;
          EndIf;
       EndIf;
@@ -177,10 +186,6 @@ While Sat.ElapsedDays < {{TOTAL_DURATION_DAYS}}
    ve = Sat.EarthFixed.VX * ex + Sat.EarthFixed.VY * ey + Sat.EarthFixed.VZ * ez;
    vn = Sat.EarthFixed.VX * nx + Sat.EarthFixed.VY * ny + Sat.EarthFixed.VZ * nz;
 
-   tX = TargetA.EarthFixed.X;
-   tY = TargetA.EarthFixed.Y;
-   tZ = TargetA.EarthFixed.Z;
-   tNorm = sqrt(tX * tX + tY * tY + tZ * tZ);
    ux = tX / tNorm;
    uy = tY / tNorm;
    uz = tZ / tNorm;

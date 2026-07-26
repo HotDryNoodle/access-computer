@@ -406,6 +406,14 @@ int main() {
         expect(script.find("Sat.EarthMJ2000Eq.X") != std::string::npos &&
                    script.find("TargetA.EarthMJ2000Eq.X") != std::string::npos,
                "P2 template EarthMJ2000Eq Sat+Target");
+        expect(script.find("targetRadiusKm = tNorm") != std::string::npos &&
+                   script.find("targetRadiusKm * targetRadiusKm") !=
+                       std::string::npos &&
+                   script.find("losLimit = losNorm - 1.0e-3") !=
+                       std::string::npos &&
+                   script.find("tHit1 < losLimit") != std::string::npos &&
+                   script.find("tHit2 < losLimit") != std::string::npos,
+               "P2 surface-target LOS radius/epsilon");
 
         bool threw = false;
         try {
