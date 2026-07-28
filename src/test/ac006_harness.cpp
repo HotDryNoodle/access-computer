@@ -58,8 +58,48 @@ std::string two_sample_trace(double in_swath, double lit) {
            sample("30 Dec 2026 03:00:10.000", in_swath, lit);
 }
 
+std::string trace_interval(const std::string& start, const std::string& end) {
+    return sample(start, 1.0, 1.0) + sample(end, 1.0, 1.0);
+}
+
 std::string eclipse_line(const std::string& kind) {
     return "30 Dec 2026 02:59:00.000 30 Dec 2026 03:01:00.000 " + kind + "\n";
+}
+
+std::string real_eclipse_report() {
+    return "Spacecraft: Sat\n"
+           "\n"
+           "Start Time (UTC)            Stop Time (UTC)               "
+           "Duration (s)    Occ Body        Type        Event Number  "
+           "Total Duration (s)\n"
+           "30 Dec 2026 00:03:00.000    30 Dec 2026 00:26:16.939      "
+           "1396.9386300    Earth           Umbra       1             "
+           "1396.9386300\n"
+           "30 Dec 2026 01:22:17.650    30 Dec 2026 01:57:30.204      "
+           "2112.5534680    Earth           Umbra       2             "
+           "2112.5534680\n"
+           "30 Dec 2026 02:53:21.961    30 Dec 2026 02:53:30.956      "
+           "8.9942977997    Earth           Penumbra    3             "
+           "2121.5064787\n"
+           "30 Dec 2026 02:53:30.956    30 Dec 2026 03:28:43.468      "
+           "2112.5121809    Earth           Umbra       3             "
+           "2121.5064787\n"
+           "30 Dec 2026 04:24:44.261    30 Dec 2026 04:59:56.732      "
+           "2112.4708382    Earth           Umbra       4             "
+           "2121.5848073\n"
+           "30 Dec 2026 04:59:56.732    30 Dec 2026 05:00:05.846      "
+           "9.1139690601    Earth           Penumbra    4             "
+           "2121.5848073\n"
+           "30 Dec 2026 05:55:57.566    30 Dec 2026 06:31:09.995      "
+           "2112.4294710    Earth           Umbra       5             "
+           "2112.4294710\n"
+           "\n"
+           "Number of individual events : 7\n"
+           "Number of total events      : 5\n"
+           "Maximum duration (s)        :   2121.5848073\n"
+           "Maximum duration at the 4th eclipse.\n"
+           "\n"
+           "\n";
 }
 
 mp::MergeOptions base_opts() {
@@ -279,6 +319,157 @@ int main() {
         expect(r9.warnings.size() == 1 &&
                    r9.warnings[0] == kEclipseFilterUnavailableWarning,
                "H8 unknown-kind exact warning");
+    }
+
+    std::cout << "==> E1 real EclipseLocator report (7 events + summaries)\n";
+    const auto real_ecl =
+        write_file("e1_real_eclipse.txt", real_eclipse_report());
+    {
+        struct EventProbe {
+            const char* start;
+            const char* end;
+            bool        umbra;
+        };
+        const std::vector<EventProbe> probes = {
+            {"30 Dec 2026 00:10:00.000", "30 Dec 2026 00:10:10.000", true},
+            {"30 Dec 2026 01:30:00.000", "30 Dec 2026 01:30:10.000", true},
+            {"30 Dec 2026 02:53:22.000", "30 Dec 2026 02:53:23.000", false},
+            {"30 Dec 2026 03:00:00.000", "30 Dec 2026 03:00:10.000", true},
+            {"30 Dec 2026 04:30:00.000", "30 Dec 2026 04:30:10.000", true},
+            {"30 Dec 2026 04:59:58.000", "30 Dec 2026 05:00:00.000", false},
+            {"30 Dec 2026 06:00:00.000", "30 Dec 2026 06:00:10.000", true},
+        };
+        bool all_filtered_by_kind   = true;
+        bool all_kept_by_other_kind = true;
+        bool all_without_warning    = true;
+        for (std::size_t i = 0; i < probes.size(); ++i) {
+            const auto tr =
+                write_file("e1_trace_" + std::to_string(i) + ".txt",
+                           trace_interval(probes[i].start, probes[i].end));
+            auto expected             = base_opts();
+            expected.exclude_umbra    = probes[i].umbra;
+            expected.exclude_penumbra = !probes[i].umbra;
+            const auto filtered = merge_optical_windows(tr, real_ecl, expected);
+            all_filtered_by_kind =
+                all_filtered_by_kind && filtered.windows.empty();
+            all_without_warning =
+                all_without_warning && filtered.warnings.empty();
+
+            expected.exclude_umbra    = !probes[i].umbra;
+            expected.exclude_penumbra = probes[i].umbra;
+            const auto kept = merge_optical_windows(tr, real_ecl, expected);
+            all_kept_by_other_kind =
+                all_kept_by_other_kind && kept.windows.size() == 1;
+            all_without_warning = all_without_warning && kept.warnings.empty();
+        }
+        expect(all_filtered_by_kind,
+               "E1 all 7 events parsed with expected kind");
+        expect(all_kept_by_other_kind,
+               "E1 opposite kind flag keeps all probes");
+        expect(all_without_warning, "E1 real report has no D9 warning");
+    }
+
+    std::cout << "==> E2 discriminating Umbra filter with real report\n";
+    {
+        const auto tr = write_file("e2_trace.txt", two_sample_trace(1.0, 1.0));
+        const auto r  = merge_optical_windows(tr, real_ecl, base_opts());
+        expect(r.windows.empty(), "E2 in-Umbra window is filtered");
+        expect(r.warnings.empty(), "E2 real report has no D9 warning");
+    }
+
+    std::cout << "==> E3 summary-only report is unavailable\n";
+    {
+        const auto summary_only = write_file(
+            "e3_summary_only.txt",
+            "Spacecraft: Sat\n\n"
+            "Start Time (UTC)            Stop Time (UTC)               "
+            "Duration (s)    Occ Body        Type        Event Number  "
+            "Total Duration (s)\n"
+            "\nNumber of individual events : 0\n"
+            "Number of total events      : 0\n"
+            "Maximum duration (s)        :   0\n"
+            "Maximum duration at the 0th eclipse.\n");
+        const auto tr = write_file("e3_trace.txt", two_sample_trace(1.0, 1.0));
+        const auto r  = merge_optical_windows(tr, summary_only, base_opts());
+        expect(r.windows.size() == 1,
+               "E3 summary-only keeps window best-effort");
+        expect(r.warnings.size() == 1 &&
+                   r.warnings[0] == kEclipseFilterUnavailableWarning,
+               "E3 summary-only exact D9 warning");
+    }
+
+    std::cout << "==> E4 timestamp-prefixed malformed rows remain fail-safe\n";
+    {
+        const auto tr = write_file("e4_trace.txt", two_sample_trace(1.0, 1.0));
+        const std::vector<std::string> malformed = {
+            "30 Dec 2026 02:59:00.000 Umbra\n",
+            "30 Dec 2026 02:59:00.000 30 Dec 2026 03:01:00.000 "
+            "UnknownKind\n",
+            "30 Xxx 2026 02:59:00.000 30 Dec 2026 03:01:00.000 Umbra\n",
+        };
+        bool all_best_effort   = true;
+        bool all_exact_warning = true;
+        for (std::size_t i = 0; i < malformed.size(); ++i) {
+            const auto ecl = write_file(
+                "e4_malformed_" + std::to_string(i) + ".txt", malformed[i]);
+            const auto r    = merge_optical_windows(tr, ecl, base_opts());
+            all_best_effort = all_best_effort && r.windows.size() == 1;
+            all_exact_warning =
+                all_exact_warning && r.warnings.size() == 1 &&
+                r.warnings[0] == kEclipseFilterUnavailableWarning;
+        }
+        expect(all_best_effort, "E4 malformed event rows use D9 best-effort");
+        expect(all_exact_warning, "E4 malformed event rows exact warning");
+    }
+
+    std::cout << "==> E5 valid plus malformed event invalidates report\n";
+    {
+        const auto mixed =
+            write_file("e5_mixed.txt",
+                       "30 Dec 2026 02:59:00.000 30 Dec 2026 03:01:00.000 "
+                       "120.0 Earth Umbra 1 120.0\n"
+                       "30 Dec 2026 03:02:00.000 Umbra\n");
+        const auto tr = write_file("e5_trace.txt", two_sample_trace(1.0, 1.0));
+        const auto r  = merge_optical_windows(tr, mixed, base_opts());
+        expect(r.windows.size() == 1, "E5 mixed report clears parsed event");
+        expect(r.warnings.size() == 1 &&
+                   r.warnings[0] == kEclipseFilterUnavailableWarning,
+               "E5 mixed report exact warning");
+    }
+
+    std::cout << "==> E6 real no-event marker remains EmptyValid\n";
+    {
+        const auto no_events = write_file(
+            "e6_no_events.txt",
+            "Spacecraft: Sat\n\n"
+            "There are no eclipse events in the time interval "
+            "30 Dec 2026 00:00:00.000 to 30 Dec 2026 02:00:00.000\n");
+        const auto tr = write_file("e6_trace.txt", two_sample_trace(1.0, 1.0));
+        const auto r  = merge_optical_windows(tr, no_events, base_opts());
+        expect(r.windows.size() == 1, "E6 no-event report keeps window");
+        expect(r.warnings.empty(), "E6 no-event report has no warning");
+    }
+
+    std::cout << "==> E7 future non-event summary is ignored\n";
+    {
+        const auto future = write_file(
+            "e7_future_summary.txt",
+            real_eclipse_report() + "Minimum duration (s) : 8.9942977997\n");
+        const auto tr = write_file("e7_trace.txt", two_sample_trace(1.0, 1.0));
+        const auto r  = merge_optical_windows(tr, future, base_opts());
+        expect(r.windows.empty(), "E7 future summary preserves filtering");
+        expect(r.warnings.empty(), "E7 future summary has no warning");
+    }
+
+    std::cout << "==> E8 both eclipse flags disabled\n";
+    {
+        const auto tr = write_file("e8_trace.txt", two_sample_trace(1.0, 1.0));
+        auto       o  = base_opts();
+        o.exclude_umbra    = false;
+        o.exclude_penumbra = false;
+        const auto r       = merge_optical_windows(tr, real_ecl, o);
+        expect(r.windows.size() == 1, "E8 in-Umbra window kept");
+        expect(r.warnings.empty(), "E8 complete report has no warning");
     }
 
     std::cout << "==> V1 RSA missing require_sunlit warning\n";

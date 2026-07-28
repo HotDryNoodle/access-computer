@@ -464,7 +464,7 @@ else
   assert_eq "ac005-harness exit" "$got" "0"
 fi
 
-echo "==> [17] AC-006 harness (illumination flags H1–H8 / V1–V2)"
+echo "==> [17] AC-006/025 harness (H1–H8 / E1–E8 / V1–V2)"
 HARNESS6="$BUILD/ac006-harness"
 if [[ ! -x "$HARNESS6" ]]; then
   echo "missing harness: $HARNESS6 (meson compile -C build)" >&2

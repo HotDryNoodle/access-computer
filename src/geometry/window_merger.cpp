@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 
@@ -80,6 +81,12 @@ enum class EclipseReportStatus {
     HasEvents,
 };
 
+bool starts_with_utcgregorian_timestamp(const std::string& line) {
+    static const std::regex timestamp_prefix(
+        R"(^[0-9]{1,2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}([[:space:]]|$))");
+    return std::regex_search(line, timestamp_prefix);
+}
+
 EclipseReportStatus load_eclipses(const std::filesystem::path&  path,
                                   std::vector<EclipseInterval>* out) {
     if (!std::filesystem::exists(path)) {
@@ -105,25 +112,9 @@ EclipseReportStatus load_eclipses(const std::filesystem::path&  path,
             saw_no_event_marker = true;
             continue;
         }
-        if (line.find("Number of events") != std::string::npos) {
-            std::istringstream ns(line);
-            std::string        tok;
-            int                n_events = -1;
-            while (ns >> tok) {
-                try {
-                    n_events = std::stoi(tok);
-                } catch (...) {
-                    // keep scanning for a trailing integer
-                }
-            }
-            if (n_events == 0) {
-                saw_no_event_marker = true;
-                continue;
-            }
-            // 非 0 或无法解析数字：若最终无事件行则视为不可读
-            if (n_events < 0) { saw_unreadable = true; }
-            continue;
-        }
+        // 仅 UTCGregorian 时间戳开头的行属于事件候选；表头、摘要及未来
+        // 新增的非事件行不参与解析，也不降低报告可读性。
+        if (!starts_with_utcgregorian_timestamp(line)) { continue; }
 
         std::istringstream       ls(line);
         std::vector<std::string> parts;
