@@ -1,7 +1,7 @@
 # access-computer samples
 
-> 契约 SSOT：父仓 [`docs/architecture/ac-003-interface-contract.md`](../../../docs/architecture/ac-003-interface-contract.md)
-> 时间模型（AC-004）：[`docs/architecture/ac-004-epoch-alignment.md`](../../../docs/architecture/ac-004-epoch-alignment.md)
+> 契约 SSOT：父仓 [`docs/architecture/archive/ac-003-interface-contract.md`](../../../docs/architecture/archive/ac-003-interface-contract.md)
+> 时间模型（AC-004）：[`docs/architecture/archive/ac-004-epoch-alignment.md`](../../../docs/architecture/archive/ac-004-epoch-alignment.md)
 
 | 文件 | 场景 | 角色 | 预期 |
 |------|------|------|------|
